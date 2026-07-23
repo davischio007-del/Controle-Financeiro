@@ -631,7 +631,7 @@ interface FinancialStore {
 export const useFinancialStore = create<FinancialStore>()(
   persist(
     (set, get) => ({
-      currentUser: INITIAL_USERS[0], // Auto login as davischio admin
+      currentUser: null, // Require login on access
       users: INITIAL_USERS,
       banks: INITIAL_BANKS,
       cards: INITIAL_CARDS,
@@ -996,10 +996,20 @@ export const useFinancialStore = create<FinancialStore>()(
         const sub = get().subcategories.find((s) => s.id === id);
         if (!sub) return;
         deleteDocFromFirestore('subcategories', id);
+        const trash: TrashItem = {
+          id: `trash_${Date.now()}`,
+          originalId: id,
+          module: 'subcategorias',
+          itemTitle: sub.name,
+          originalData: sub,
+          deletedAt: new Date().toISOString(),
+          deletedBy: get().currentUser?.username || 'Admin',
+        };
         set((state) => ({
           subcategories: state.subcategories.filter((s) => s.id !== id),
+          trashBin: [trash, ...state.trashBin],
         }));
-        get().logAudit('subcategorias', 'Exclusão', `Subcategoria ${sub.name} excluída`);
+        get().logAudit('subcategorias', 'Exclusão', `Subcategoria ${sub.name} movida para a lixeira`);
       },
 
       // Incomes
@@ -1648,6 +1658,25 @@ export const useFinancialStore = create<FinancialStore>()(
 
         const { module, originalData } = item;
 
+        const moduleToCollection: Record<string, string> = {
+          usuarios: 'users',
+          bancos: 'banks',
+          cartoes: 'cards',
+          categorias: 'categories',
+          subcategorias: 'subcategories',
+          receitas: 'incomes',
+          contas_fixas: 'fixedExpenses',
+          contas_variaveis: 'variableExpenses',
+          emprestimos: 'loans',
+          investimentos: 'investments',
+          metas: 'goals',
+        };
+
+        const colName = moduleToCollection[module];
+        if (colName && originalData && originalData.id) {
+          saveDocToFirestore(colName, originalData);
+        }
+
         set((state) => {
           let updatedState: Partial<FinancialStore> = {
             trashBin: state.trashBin.filter((t) => t.id !== id),
@@ -1868,6 +1897,10 @@ export const useFinancialStore = create<FinancialStore>()(
     }),
     {
       name: 'financial_system_storage_v1',
+      partialize: (state) => {
+        const { currentUser, ...rest } = state;
+        return rest;
+      },
     }
   )
 );

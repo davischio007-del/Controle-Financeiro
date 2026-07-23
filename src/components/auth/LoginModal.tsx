@@ -119,12 +119,21 @@ export const LoginModal: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
           >
             <ShieldCheck className="w-4 h-4" />
             <span>{loading ? 'Autenticando...' : 'Entrar'}</span>
           </button>
         </form>
+
+        {/* Credentials Info Box */}
+        <div className="mt-5 p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 rounded-xl text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
+          <p className="font-bold text-slate-700 dark:text-slate-300">Acesso de Demonstração:</p>
+          <div className="flex items-center justify-between text-[10px] bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 font-mono">
+            <span>Admin: <strong>davischio</strong></span>
+            <span>Senha: <strong>Snoop123@</strong></span>
+          </div>
+        </div>
 
         {/* Forgot Password Modal */}
         {showForgotPassword && (
