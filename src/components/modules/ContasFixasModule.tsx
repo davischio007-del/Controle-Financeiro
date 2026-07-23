@@ -111,6 +111,8 @@ export const ContasFixasModule: React.FC = () => {
     setIsModalOpen(false);
   };
 
+  const filteredSubcategories = subcategories.filter((s) => s.categoryId === categoryId);
+
   const columns: Column<FixedExpense>[] = [
     {
       header: 'Descrição / Vencimento',
@@ -125,10 +127,16 @@ export const ContasFixasModule: React.FC = () => {
       sortable: true,
     },
     {
-      header: 'Categoria',
+      header: 'Categoria / Subcategoria',
       accessor: (r) => {
         const cat = categories.find((c) => c.id === r.categoryId);
-        return <span className="font-semibold text-rose-600 dark:text-rose-400">{cat?.name || '-'}</span>;
+        const sub = subcategories.find((s) => s.id === r.subcategoryId);
+        return (
+          <div>
+            <span className="font-semibold text-rose-600 dark:text-rose-400">{cat?.name || '-'}</span>
+            {sub && <span className="text-slate-400 text-[11px] block">{sub.name}</span>}
+          </div>
+        );
       },
     },
     {
@@ -225,7 +233,10 @@ export const ContasFixasModule: React.FC = () => {
                   <select
                     required
                     value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
+                    onChange={(e) => {
+                      setCategoryId(e.target.value);
+                      setSubcategoryId('');
+                    }}
                     className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
                   >
                     {categories.map((c) => (
@@ -237,17 +248,33 @@ export const ContasFixasModule: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Valor Mensal (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={amount || ''}
-                    onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
-                    placeholder="0.00"
-                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
-                  />
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Subcategoria (Opcional)</label>
+                  <select
+                    value={subcategoryId}
+                    onChange={(e) => setSubcategoryId(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  >
+                    <option value="">Sem Subcategoria</option>
+                    {filteredSubcategories.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Valor Mensal (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={amount || ''}
+                  onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
+                  placeholder="0.00"
+                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
+                />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
