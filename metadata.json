@@ -1,0 +1,6 @@
+{
+  "name": "Controle Financeiro Pessoal Profissional",
+  "description": "Sistema completo e seguro de controle financeiro pessoal, gestão de contas, cartões, investimentos, empréstimos, metas e relatórios.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
