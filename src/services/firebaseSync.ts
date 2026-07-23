@@ -12,6 +12,28 @@ import { db } from '../lib/firebase';
 import { useFinancialStore } from './storage';
 
 /**
+ * Recursively strip undefined properties from an object so Firestore setDoc won't reject it
+ */
+function cleanForFirestore<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(cleanForFirestore) as unknown as T;
+  }
+  if (typeof obj === 'object' && obj.constructor === Object) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanForFirestore(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+}
+
+/**
  * Save or overwrite a document in Firestore
  */
 export async function saveDocToFirestore<T extends { id: string }>(
@@ -20,7 +42,8 @@ export async function saveDocToFirestore<T extends { id: string }>(
 ) {
   try {
     const docRef = doc(db, collectionName, data.id);
-    await setDoc(docRef, data, { merge: true });
+    const cleanedData = cleanForFirestore(data);
+    await setDoc(docRef, cleanedData, { merge: true });
   } catch (error) {
     console.error(`Failed to save document to ${collectionName}:`, error);
   }
@@ -56,7 +79,7 @@ export async function initFirebaseSync() {
         const batch = writeBatch(db);
         items.forEach((item) => {
           if (item && item.id) {
-            batch.set(doc(db, colName, item.id), item);
+            batch.set(doc(db, colName, item.id), cleanForFirestore(item));
           }
         });
         await batch.commit();

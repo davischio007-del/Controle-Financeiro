@@ -690,8 +690,8 @@ export const useFinancialStore = create<FinancialStore>()(
           module,
           action,
           details,
-          previousValue,
-          newValue,
+          previousValue: previousValue ?? null,
+          newValue: newValue ?? null,
           ip: '127.0.0.1',
         };
         set((state) => ({ auditLogs: [newLog, ...state.auditLogs] }));
