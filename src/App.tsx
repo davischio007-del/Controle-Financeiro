@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFinancialStore } from './services/storage';
+import { initFirebaseSync } from './services/firebaseSync';
 import { Sidebar } from './components/common/Sidebar';
 import { Header } from './components/common/Header';
 import { LoginModal } from './components/auth/LoginModal';
@@ -27,6 +28,10 @@ export function App() {
   const { currentUser } = useFinancialStore();
   const [activeModule, setActiveModule] = useState('dashboard');
   const [selectedCardInvoiceId, setSelectedCardInvoiceId] = useState<string | undefined>();
+
+  useEffect(() => {
+    initFirebaseSync();
+  }, []);
 
   const handleOpenCardInvoice = (cardId: string) => {
     setSelectedCardInvoiceId(cardId);

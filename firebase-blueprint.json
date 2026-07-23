@@ -1,0 +1,162 @@
+{
+  "collections": {
+    "users": {
+      "description": "Usuários do sistema de controle financeiro",
+      "fields": {
+        "id": { "type": "string", "description": "ID do usuário", "required": true },
+        "username": { "type": "string", "description": "Nome de usuário de acesso", "required": true },
+        "name": { "type": "string", "description": "Nome completo", "required": true },
+        "email": { "type": "string", "description": "Endereço de e-mail", "required": true },
+        "role": { "type": "string", "description": "Perfil de acesso", "required": true },
+        "status": { "type": "string", "description": "Status da conta", "required": true },
+        "passwordHash": { "type": "string", "description": "Hash seguro da senha", "required": true },
+        "pin": { "type": "string", "description": "PIN do usuário", "required": false },
+        "createdAt": { "type": "string", "description": "Data de criação", "required": true },
+        "lastLogin": { "type": "string", "description": "Último login", "required": false }
+      }
+    },
+    "banks": {
+      "description": "Contas bancárias e carteiras de pagamento",
+      "fields": {
+        "id": { "type": "string", "description": "ID do banco", "required": true },
+        "name": { "type": "string", "description": "Nome amigável do banco", "required": true },
+        "institution": { "type": "string", "description": "Nome da instituição financeira", "required": true },
+        "agency": { "type": "string", "description": "Agência", "required": false },
+        "account": { "type": "string", "description": "Número da conta", "required": false },
+        "type": { "type": "string", "description": "Tipo da conta", "required": true },
+        "initialBalance": { "type": "number", "description": "Saldo inicial", "required": true },
+        "currentBalance": { "type": "number", "description": "Saldo atualizado", "required": true },
+        "color": { "type": "string", "description": "Cor identificadora", "required": true },
+        "icon": { "type": "string", "description": "Ícone visual", "required": true },
+        "status": { "type": "string", "description": "Status da conta", "required": true },
+        "archived": { "type": "boolean", "description": "Arquivado", "required": true },
+        "updatedAt": { "type": "string", "description": "Data de última atualização", "required": true }
+      }
+    },
+    "cards": {
+      "description": "Cartões de crédito",
+      "fields": {
+        "id": { "type": "string", "description": "ID do cartão", "required": true },
+        "name": { "type": "string", "description": "Nome do cartão", "required": true },
+        "bankId": { "type": "string", "description": "ID do banco associador", "required": true },
+        "network": { "type": "string", "description": "Bandeira", "required": true },
+        "limitTotal": { "type": "number", "description": "Limite total de crédito", "required": true },
+        "limitUsed": { "type": "number", "description": "Limite utilizado", "required": true },
+        "limitAvailable": { "type": "number", "description": "Limite disponível", "required": true },
+        "closingDay": { "type": "number", "description": "Dia de fechamento", "required": true },
+        "dueDay": { "type": "number", "description": "Dia de vencimento", "required": true },
+        "color": { "type": "string", "description": "Cor de destaque", "required": true },
+        "icon": { "type": "string", "description": "Ícone", "required": true },
+        "status": { "type": "string", "description": "Status do cartão", "required": true },
+        "archived": { "type": "boolean", "description": "Arquivado", "required": true }
+      }
+    },
+    "incomes": {
+      "description": "Lançamentos de receitas",
+      "fields": {
+        "id": { "type": "string", "description": "ID da receita", "required": true },
+        "description": { "type": "string", "description": "Descrição da receita", "required": true },
+        "categoryId": { "type": "string", "description": "ID da categoria", "required": true },
+        "subcategoryId": { "type": "string", "description": "ID da subcategoria", "required": false },
+        "bankId": { "type": "string", "description": "ID do banco de destino", "required": true },
+        "amount": { "type": "number", "description": "Valor monetário", "required": true },
+        "date": { "type": "string", "description": "Data da receita", "required": true },
+        "isRecurring": { "type": "boolean", "description": "Recorrente", "required": false },
+        "notes": { "type": "string", "description": "Observações", "required": false },
+        "archived": { "type": "boolean", "description": "Arquivado", "required": true },
+        "createdAt": { "type": "string", "description": "Data de criação", "required": true },
+        "createdBy": { "type": "string", "description": "Usuário criador", "required": true }
+      }
+    },
+    "fixedExpenses": {
+      "description": "Contas fixas",
+      "fields": {
+        "id": { "type": "string", "description": "ID da conta fixa", "required": true },
+        "description": { "type": "string", "description": "Descrição da conta", "required": true },
+        "categoryId": { "type": "string", "description": "ID da categoria", "required": true },
+        "subcategoryId": { "type": "string", "description": "ID da subcategoria", "required": false },
+        "amount": { "type": "number", "description": "Valor", "required": true },
+        "dueDay": { "type": "number", "description": "Dia de vencimento", "required": true },
+        "periodicity": { "type": "string", "description": "Periodicidade", "required": true },
+        "paymentMethod": { "type": "string", "description": "Forma de pagamento", "required": true },
+        "bankId": { "type": "string", "description": "ID do banco", "required": false },
+        "cardId": { "type": "string", "description": "ID do cartão", "required": false },
+        "status": { "type": "string", "description": "Situação (Pago, Pendente, Atrasado)", "required": true },
+        "archived": { "type": "boolean", "description": "Arquivado", "required": true }
+      }
+    },
+    "variableExpenses": {
+      "description": "Contas e despesas variáveis",
+      "fields": {
+        "id": { "type": "string", "description": "ID da despesa", "required": true },
+        "description": { "type": "string", "description": "Descrição da despesa", "required": true },
+        "categoryId": { "type": "string", "description": "ID da categoria", "required": true },
+        "subcategoryId": { "type": "string", "description": "ID da subcategoria", "required": false },
+        "amount": { "type": "number", "description": "Valor", "required": true },
+        "date": { "type": "string", "description": "Data da despesa", "required": true },
+        "paymentMethod": { "type": "string", "description": "Forma de pagamento", "required": true },
+        "bankId": { "type": "string", "description": "ID do banco", "required": false },
+        "cardId": { "type": "string", "description": "ID do cartão", "required": false },
+        "status": { "type": "string", "description": "Situação", "required": true },
+        "archived": { "type": "boolean", "description": "Arquivado", "required": true }
+      }
+    },
+    "categories": {
+      "description": "Categorias do sistema",
+      "fields": {
+        "id": { "type": "string", "description": "ID da categoria", "required": true },
+        "name": { "type": "string", "description": "Nome da categoria", "required": true },
+        "type": { "type": "string", "description": "Tipo (Receita, Despesa, Ambos)", "required": true },
+        "color": { "type": "string", "description": "Cor visual", "required": true },
+        "icon": { "type": "string", "description": "Ícone", "required": true },
+        "isSystem": { "type": "boolean", "description": "Categoria padrão do sistema", "required": false },
+        "archived": { "type": "boolean", "description": "Arquivada", "required": true }
+      }
+    },
+    "loans": {
+      "description": "Empréstimos e financiamentos",
+      "fields": {
+        "id": { "type": "string", "description": "ID do empréstimo", "required": true },
+        "bankId": { "type": "string", "description": "ID do banco concessor", "required": true },
+        "contractNumber": { "type": "string", "description": "Número do contrato", "required": true },
+        "type": { "type": "string", "description": "Tipo do empréstimo", "required": true },
+        "contractedAmount": { "type": "number", "description": "Valor contratado", "required": true },
+        "outstandingBalance": { "type": "number", "description": "Saldo devedor", "required": true },
+        "paidAmount": { "type": "number", "description": "Valor já pago", "required": true },
+        "interestRateMonthly": { "type": "number", "description": "Taxa de juros mensal", "required": true },
+        "amortizationSystem": { "type": "string", "description": "Sistema de amortização (PRICE, SAC)", "required": true },
+        "installmentsTotal": { "type": "number", "description": "Total de parcelas", "required": true },
+        "installmentsPaid": { "type": "number", "description": "Parcelas pagas", "required": true },
+        "status": { "type": "string", "description": "Situação do contrato", "required": true },
+        "archived": { "type": "boolean", "description": "Arquivado", "required": true }
+      }
+    },
+    "investments": {
+      "description": "Carteira de investimentos",
+      "fields": {
+        "id": { "type": "string", "description": "ID do investimento", "required": true },
+        "institution": { "type": "string", "description": "Instituição financeira", "required": true },
+        "type": { "type": "string", "description": "Tipo do investimento", "required": true },
+        "appliedAmount": { "type": "number", "description": "Valor aplicado", "required": true },
+        "currentAmount": { "type": "number", "description": "Valor atual", "required": true },
+        "yieldPercent": { "type": "number", "description": "Percentual de rendimento", "required": true },
+        "yieldAccumulated": { "type": "number", "description": "Rendimento acumulado em R$", "required": true },
+        "liquidity": { "type": "string", "description": "Liquidez", "required": true },
+        "applicationDate": { "type": "string", "description": "Data de aplicação", "required": true },
+        "archived": { "type": "boolean", "description": "Arquivado", "required": true }
+      }
+    },
+    "auditLogs": {
+      "description": "Registros de auditoria",
+      "fields": {
+        "id": { "type": "string", "description": "ID do registro", "required": true },
+        "timestamp": { "type": "string", "description": "Data e hora", "required": true },
+        "userId": { "type": "string", "description": "ID do usuário", "required": true },
+        "userName": { "type": "string", "description": "Nome do usuário", "required": true },
+        "module": { "type": "string", "description": "Módulo afetado", "required": true },
+        "action": { "type": "string", "description": "Ação executada", "required": true },
+        "details": { "type": "string", "description": "Detalhes da ação", "required": true }
+      }
+    }
+  }
+}

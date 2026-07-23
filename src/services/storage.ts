@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { saveDocToFirestore, deleteDocFromFirestore } from './firebaseSync';
 import {
   User,
   Bank,
@@ -694,6 +695,7 @@ export const useFinancialStore = create<FinancialStore>()(
           ip: '127.0.0.1',
         };
         set((state) => ({ auditLogs: [newLog, ...state.auditLogs] }));
+        saveDocToFirestore('auditLogs', newLog);
       },
 
       // Users
@@ -706,21 +708,25 @@ export const useFinancialStore = create<FinancialStore>()(
           createdAt: new Date().toISOString(),
         };
         set((state) => ({ users: [...state.users, newUser] }));
+        saveDocToFirestore('users', newUser);
         get().logAudit('usuarios', 'Inclusão', `Usuário ${newUser.username} criado com perfil ${newUser.role}`);
       },
 
       updateUser: (id, updates) => {
         const oldUser = get().users.find((u) => u.id === id);
         const updatedPassHash = updates.passwordHash ? hashPassword(updates.passwordHash) : undefined;
+        const updatedUser = oldUser ? { ...oldUser, ...updates, passwordHash: updatedPassHash || oldUser.passwordHash } : null;
         set((state) => ({
-          users: state.users.map((u) => (u.id === id ? { ...u, ...updates, passwordHash: updatedPassHash || u.passwordHash } : u)),
+          users: state.users.map((u) => (u.id === id ? (updatedUser as User) : u)),
         }));
+        if (updatedUser) saveDocToFirestore('users', updatedUser);
         get().logAudit('usuarios', 'Alteração', `Usuário ${oldUser?.username} atualizado`, JSON.stringify(oldUser), JSON.stringify(updates));
       },
 
       deleteUser: (id, permanent) => {
         const user = get().users.find((u) => u.id === id);
         if (!user) return;
+        deleteDocFromFirestore('users', id);
         if (permanent) {
           set((state) => ({ users: state.users.filter((u) => u.id !== id) }));
           get().logAudit('usuarios', 'Exclusão', `Usuário ${user.username} excluído definitivamente`);
@@ -762,13 +768,17 @@ export const useFinancialStore = create<FinancialStore>()(
           updatedAt: new Date().toISOString(),
         };
         set((state) => ({ banks: [...state.banks, newBank] }));
+        saveDocToFirestore('banks', newBank);
         get().logAudit('bancos', 'Inclusão', `Banco ${newBank.name} cadastrado com saldo R$ ${newBank.initialBalance}`);
       },
 
       updateBank: (id, updates) => {
+        const bank = get().banks.find((b) => b.id === id);
+        const updated = bank ? { ...bank, ...updates, updatedAt: new Date().toISOString() } : null;
         set((state) => ({
-          banks: state.banks.map((b) => (b.id === id ? { ...b, ...updates, updatedAt: new Date().toISOString() } : b)),
+          banks: state.banks.map((b) => (b.id === id ? (updated as Bank) : b)),
         }));
+        if (updated) saveDocToFirestore('banks', updated);
         get().logAudit('bancos', 'Alteração', `Dados do banco ID ${id} atualizados`);
       },
 
@@ -777,12 +787,14 @@ export const useFinancialStore = create<FinancialStore>()(
         if (!bank) return;
 
         if (mode === 'deactivate') {
+          const updated = { ...bank, status: 'Inativo' as const };
           set((state) => ({
-            banks: state.banks.map((b) => (b.id === id ? { ...b, status: 'Inativo' } : b)),
+            banks: state.banks.map((b) => (b.id === id ? updated : b)),
           }));
+          saveDocToFirestore('banks', updated);
           get().logAudit('bancos', 'Alteração', `Banco ${bank.name} desativado`);
         } else if (mode === 'transfer' && targetBankId) {
-          // Reassign incomes, fixed/variable expenses, transfers to targetBankId
+          deleteDocFromFirestore('banks', id);
           set((state) => ({
             incomes: state.incomes.map((i) => (i.bankId === id ? { ...i, bankId: targetBankId } : i)),
             fixedExpenses: state.fixedExpenses.map((f) => (f.bankId === id ? { ...f, bankId: targetBankId } : f)),
@@ -791,6 +803,7 @@ export const useFinancialStore = create<FinancialStore>()(
           }));
           get().logAudit('bancos', 'Exclusão', `Banco ${bank.name} removido e movimentações transferidas para o banco ID ${targetBankId}`);
         } else if (mode === 'delete') {
+          deleteDocFromFirestore('banks', id);
           const trash: TrashItem = {
             id: `trash_${Date.now()}`,
             originalId: id,
@@ -912,13 +925,17 @@ export const useFinancialStore = create<FinancialStore>()(
           archived: false,
         };
         set((state) => ({ categories: [...state.categories, newCat] }));
+        saveDocToFirestore('categories', newCat);
         get().logAudit('categorias', 'Inclusão', `Categoria ${newCat.name} criada`);
       },
 
       updateCategory: (id, updates) => {
+        const cat = get().categories.find((c) => c.id === id);
+        const updated = cat ? { ...cat, ...updates } : null;
         set((state) => ({
-          categories: state.categories.map((c) => (c.id === id ? { ...c, ...updates } : c)),
+          categories: state.categories.map((c) => (c.id === id ? (updated as Category) : c)),
         }));
+        if (updated) saveDocToFirestore('categories', updated);
         get().logAudit('categorias', 'Alteração', `Categoria ID ${id} atualizada`);
       },
 
@@ -926,6 +943,7 @@ export const useFinancialStore = create<FinancialStore>()(
         const cat = get().categories.find((c) => c.id === id);
         if (!cat) return;
 
+        deleteDocFromFirestore('categories', id);
         if (reassignCategoryId) {
           set((state) => ({
             incomes: state.incomes.map((i) => (i.categoryId === id ? { ...i, categoryId: reassignCategoryId } : i)),
@@ -961,18 +979,23 @@ export const useFinancialStore = create<FinancialStore>()(
           archived: false,
         };
         set((state) => ({ subcategories: [...state.subcategories, newSub] }));
+        saveDocToFirestore('subcategories', newSub);
         get().logAudit('subcategorias', 'Inclusão', `Subcategoria ${newSub.name} criada`);
       },
 
       updateSubcategory: (id, updates) => {
+        const sub = get().subcategories.find((s) => s.id === id);
+        const updated = sub ? { ...sub, ...updates } : null;
         set((state) => ({
-          subcategories: state.subcategories.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+          subcategories: state.subcategories.map((s) => (s.id === id ? (updated as Subcategory) : s)),
         }));
+        if (updated) saveDocToFirestore('subcategories', updated);
       },
 
       deleteSubcategory: (id) => {
         const sub = get().subcategories.find((s) => s.id === id);
         if (!sub) return;
+        deleteDocFromFirestore('subcategories', id);
         set((state) => ({
           subcategories: state.subcategories.filter((s) => s.id !== id),
         }));
@@ -996,6 +1019,7 @@ export const useFinancialStore = create<FinancialStore>()(
             b.id === incomeData.bankId ? { ...b, currentBalance: b.currentBalance + incomeData.amount } : b
           ),
         }));
+        saveDocToFirestore('incomes', newIncome);
 
         get().logAudit('receitas', 'Inclusão', `Receita "${newIncome.description}" no valor de R$ ${newIncome.amount} lançada`);
       },
@@ -1023,10 +1047,12 @@ export const useFinancialStore = create<FinancialStore>()(
           });
         }
 
+        const updatedInc = { ...oldInc, ...updates };
         set((state) => ({
           banks,
-          incomes: state.incomes.map((i) => (i.id === id ? { ...i, ...updates } : i)),
+          incomes: state.incomes.map((i) => (i.id === id ? updatedInc : i)),
         }));
+        saveDocToFirestore('incomes', updatedInc);
 
         get().logAudit('receitas', 'Alteração', `Receita "${oldInc.description}" atualizada`);
       },
@@ -1035,6 +1061,7 @@ export const useFinancialStore = create<FinancialStore>()(
         const inc = get().incomes.find((i) => i.id === id);
         if (!inc) return;
 
+        deleteDocFromFirestore('incomes', id);
         // Revert bank balance
         set((state) => ({
           banks: state.banks.map((b) => (b.id === inc.bankId ? { ...b, currentBalance: b.currentBalance - inc.amount } : b)),
@@ -1088,14 +1115,18 @@ export const useFinancialStore = create<FinancialStore>()(
           banks,
           fixedExpenses: [...state.fixedExpenses, newExp],
         }));
+        saveDocToFirestore('fixedExpenses', newExp);
 
         get().logAudit('contas_fixas', 'Inclusão', `Conta fixa "${newExp.description}" lançada (R$ ${newExp.amount})`);
       },
 
       updateFixedExpense: (id, updates) => {
+        const exp = get().fixedExpenses.find((f) => f.id === id);
+        const updated = exp ? { ...exp, ...updates } : null;
         set((state) => ({
-          fixedExpenses: state.fixedExpenses.map((f) => (f.id === id ? { ...f, ...updates } : f)),
+          fixedExpenses: state.fixedExpenses.map((f) => (f.id === id ? (updated as FixedExpense) : f)),
         }));
+        if (updated) saveDocToFirestore('fixedExpenses', updated);
         get().logAudit('contas_fixas', 'Alteração', `Conta fixa ID ${id} atualizada`);
       },
 
@@ -1103,6 +1134,7 @@ export const useFinancialStore = create<FinancialStore>()(
         const exp = get().fixedExpenses.find((f) => f.id === id);
         if (!exp) return;
 
+        deleteDocFromFirestore('fixedExpenses', id);
         set((state) => ({
           fixedExpenses: state.fixedExpenses.filter((f) => f.id !== id),
           trashBin: [
@@ -1152,14 +1184,18 @@ export const useFinancialStore = create<FinancialStore>()(
           banks,
           variableExpenses: [...state.variableExpenses, newExp],
         }));
+        saveDocToFirestore('variableExpenses', newExp);
 
         get().logAudit('contas_variaveis', 'Inclusão', `Conta variável "${newExp.description}" lançada (R$ ${newExp.amount})`);
       },
 
       updateVariableExpense: (id, updates) => {
+        const exp = get().variableExpenses.find((v) => v.id === id);
+        const updated = exp ? { ...exp, ...updates } : null;
         set((state) => ({
-          variableExpenses: state.variableExpenses.map((v) => (v.id === id ? { ...v, ...updates } : v)),
+          variableExpenses: state.variableExpenses.map((v) => (v.id === id ? (updated as VariableExpense) : v)),
         }));
+        if (updated) saveDocToFirestore('variableExpenses', updated);
         get().logAudit('contas_variaveis', 'Alteração', `Conta variável ID ${id} atualizada`);
       },
 
@@ -1167,6 +1203,7 @@ export const useFinancialStore = create<FinancialStore>()(
         const exp = get().variableExpenses.find((v) => v.id === id);
         if (!exp) return;
 
+        deleteDocFromFirestore('variableExpenses', id);
         set((state) => ({
           variableExpenses: state.variableExpenses.filter((v) => v.id !== id),
           trashBin: [
