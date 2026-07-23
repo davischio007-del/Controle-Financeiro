@@ -1547,7 +1547,7 @@ export const RelatoriosModule: React.FC = () => {
 
       {/* PRINT PREVIEW FULLSCREEN MODAL */}
       {showPrintModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150 no-print">
           <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden my-8">
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1556,14 +1556,21 @@ export const RelatoriosModule: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={handleExportPDF}
+                  className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Download className="w-4 h-4" /> Baixar PDF
+                </button>
+                <button
                   onClick={handlePrint}
-                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-1"
+                  className="px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
                 >
                   <Printer className="w-4 h-4" /> Imprimir Agora
                 </button>
                 <button
                   onClick={() => setShowPrintModal(false)}
-                  className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                  className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title="Fechar visualização"
                 >
                   <X className="w-5 h-5" />
                 </button>
