@@ -20,6 +20,7 @@ import {
   Calculator,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   Percent,
   ShieldCheck,
   TrendingDown,

@@ -101,47 +101,8 @@ export function getBankMovements(bankId: string, state: BankStoreState): BankMov
       });
     });
 
-  // 5. Loans (Empréstimos - Credit release & Installment/Payoff payments)
-  (state.loans || [])
-    .filter((l) => !l.archived)
-    .forEach((l) => {
-      // Contracted loan amount credited to bank
-      if (l.bankId === bankId) {
-        const netReceived = Number(l.netAmountReceived || l.contractedAmount) || 0;
-        if (netReceived > 0) {
-          movements.push({
-            id: `${l.id}_release`,
-            date: l.contractDate || '2026-07-01',
-            description: `Empréstimo Contratado (${l.type})`,
-            categoryName: 'Empréstimos',
-            subcategoryName: 'Liberação de Crédito',
-            type: 'Entrada',
-            amount: netReceived,
-            originModule: 'emprestimos',
-          });
-        }
-      }
-
-      // Paid installments
-      (l.installments || []).forEach((inst) => {
-        if ((inst.status === 'Paga' || inst.status === 'Antecipada' || inst.status === 'Quitada') && inst.paidAmount > 0) {
-          // Check if loan installment was paid via this bank
-          const sourceBankId = inst.paymentBankId || (!inst.paymentCardId ? l.bankId : undefined);
-          if (sourceBankId === bankId) {
-            movements.push({
-              id: `${l.id}_inst_${inst.number}`,
-              date: inst.paidDate || inst.dueDate || '2026-07-01',
-              description: `Pgto Parcela ${inst.number}/${l.installmentsTotal} (${l.type})`,
-              categoryName: 'Empréstimos',
-              subcategoryName: 'Pagamento Parcela',
-              type: 'Saída',
-              amount: Number(inst.paidAmount) || 0,
-              originModule: 'emprestimos',
-            });
-          }
-        }
-      });
-    });
+  // 5. Loans (Empréstimos - Mantidos apenas para controle, não afetam movimentações bancárias)
+  // Conforme requisito: Empréstimos não devem reduzir ou somar os lançamentos no banco.
 
   // 6. Investments (Investimentos - Aportes & Resgates)
   const currentBank = state.banks.find((b) => b.id === bankId);

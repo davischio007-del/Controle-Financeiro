@@ -34,6 +34,7 @@ import {
   getCurrentDateFormatted,
   calculateExtraAmortizationDetails,
   getInvoiceCompetence,
+  getInstallmentCompetence,
 } from '../lib/utils';
 import { recalculateAllBankBalances } from '../utils/bankUtils';
 
@@ -664,7 +665,19 @@ interface FinancialStore {
   addCard: (card: Omit<Card, 'id' | 'limitAvailable' | 'limitUsed' | 'archived'>) => void;
   updateCard: (id: string, updates: Partial<Card>) => void;
   deleteCardSmart: (id: string, mode: 'deactivate' | 'delete') => boolean;
-  payCardInvoice: (cardId: string, month: number, year: number, fromBankId: string) => boolean;
+  payCardInvoice: (
+    cardId: string,
+    month: number,
+    year: number,
+    fromBankId: string,
+    customAmount?: number
+  ) => { success: boolean; error?: string };
+  undoCardInvoicePayment: (
+    cardId: string,
+    month: number,
+    year: number
+  ) => { success: boolean; error?: string };
+  syncCardInvoiceBankPayment: (cardId: string, month: number, year: number) => void;
 
   // Actions - Categories & Subcategories
   addCategory: (cat: Omit<Category, 'id' | 'archived'>) => void;
@@ -736,6 +749,8 @@ interface FinancialStore {
 
   // Actions - Transfers
   addTransfer: (transfer: Omit<Transfer, 'id' | 'archived'>) => void;
+  updateTransfer: (id: string, updates: Partial<Transfer>) => void;
+  deleteTransfer: (id: string) => void;
 
   // Actions - Users & Auth
   toggleBlockUser: (id: string) => void;
@@ -987,45 +1002,311 @@ export const useFinancialStore = create<FinancialStore>()(
         return true;
       },
 
-      payCardInvoice: (cardId, month, year, fromBankId) => {
+      payCardInvoice: (cardId, month, year, fromBankId, customAmount) => {
         const card = get().cards.find((c) => c.id === cardId);
         const bank = get().banks.find((b) => b.id === fromBankId);
-        if (!card || !bank) return false;
+        if (!card || !bank) return { success: false, error: 'Cartão ou banco não encontrado.' };
 
-        const invoiceAmount = card.limitUsed;
-        if (invoiceAmount <= 0) return true;
+        const monthStr = String(month).padStart(2, '0');
+        const existingInvoice = get().cardInvoices.find(
+          (ci) => ci.cardId === cardId && ci.month === month && ci.year === year && ci.status === 'Paga'
+        );
 
-        // Reset card used limit
-        const updatedCard = { ...card, limitUsed: 0, limitAvailable: card.limitTotal };
+        // Se a fatura já consta como paga, mas há novos lançamentos (customAmount > valor já pago):
+        if (existingInvoice) {
+          const previousPaid = existingInvoice.amount || 0;
+          const totalNeeded = customAmount !== undefined && customAmount > 0 ? customAmount : previousPaid;
+          const additionalAmount = totalNeeded - previousPaid;
+
+          if (additionalAmount <= 0) {
+            return {
+              success: false,
+              error: `A fatura do mês ${monthStr}/${year} para o cartão "${card.name}" já está totalmente paga (R$ ${previousPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).`,
+            };
+          }
+
+          if (bank.currentBalance < additionalAmount) {
+            return {
+              success: false,
+              error: `Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor do complemento: R$ ${additionalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+            };
+          }
+
+          // Restaura limite do cartão pelo valor complementar
+          const newLimitUsed = Math.max(0, card.limitUsed - additionalAmount);
+          const newLimitAvailable = Math.min(card.limitTotal, card.limitTotal - newLimitUsed);
+          const updatedCard = { ...card, limitUsed: newLimitUsed, limitAvailable: newLimitAvailable };
+
+          set((state) => ({
+            cards: state.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+          }));
+          saveDocToFirestore('cards', updatedCard);
+
+          // Atualiza registro da fatura paga com o novo valor total acumulado
+          const updatedInvoiceRecord: CardInvoice = {
+            ...existingInvoice,
+            amount: totalNeeded,
+            paidDate: getCurrentDateFormatted(),
+            paidFromBankId: fromBankId,
+          };
+
+          set((state) => ({
+            cardInvoices: state.cardInvoices.map((ci) => (ci.id === existingInvoice.id ? updatedInvoiceRecord : ci)),
+          }));
+          saveDocToFirestore('cardInvoices', updatedInvoiceRecord);
+
+          // Registra despesa do complemento no banco
+          const defaultCatId =
+            get().categories.find((c) => c.name.toLowerCase().includes('cartão') || c.name.toLowerCase().includes('fatura'))?.id ||
+            get().categories[0]?.id ||
+            'cat_despesas';
+
+          get().addVariableExpense({
+            description: `Complemento Fatura ${card.name} - ${monthStr}/${year}`,
+            categoryId: defaultCatId,
+            amount: additionalAmount,
+            date: getCurrentDateFormatted(),
+            paymentMethod: 'Débito',
+            bankId: fromBankId,
+            status: 'Pago',
+            notes: `[INVOICE_PAYMENT:${cardId}_${year}_${monthStr}] Complemento de pagamento da fatura ${monthStr}/${year} por novos lançamentos`,
+          });
+
+          get().logAudit(
+            'cartoes',
+            'Pagamento',
+            `Complemento da fatura ${monthStr}/${year} do cartão ${card.name} no valor de R$ ${additionalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} pago via ${bank.name}`
+          );
+
+          return { success: true };
+        }
+
+        const invoiceAmount = customAmount !== undefined && customAmount > 0 ? customAmount : card.limitUsed;
+        if (invoiceAmount <= 0) {
+          return { success: false, error: 'O valor da fatura deve ser maior que zero para efetuar o pagamento.' };
+        }
+
+        // Check bank balance
+        if (bank.currentBalance < invoiceAmount) {
+          return {
+            success: false,
+            error: `Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor da fatura: R$ ${invoiceAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+          };
+        }
+
+        // Restore credit card limit by the paid amount
+        const newLimitUsed = Math.max(0, card.limitUsed - invoiceAmount);
+        const newLimitAvailable = Math.min(card.limitTotal, card.limitTotal - newLimitUsed);
+        const updatedCard = { ...card, limitUsed: newLimitUsed, limitAvailable: newLimitAvailable };
+
         set((state) => ({
           cards: state.cards.map((c) => (c.id === cardId ? updatedCard : c)),
         }));
         saveDocToFirestore('cards', updatedCard);
 
-        // Record variable expense for the invoice payment
+        // Record CardInvoice as Paid to prevent duplicate payment
+        const invoiceRecord: CardInvoice = {
+          id: `inv_${cardId}_${year}_${monthStr}`,
+          cardId,
+          month,
+          year,
+          amount: invoiceAmount,
+          status: 'Paga',
+          paidDate: getCurrentDateFormatted(),
+          paidFromBankId: fromBankId,
+          purchases: [],
+        };
+
+        set((state) => ({
+          cardInvoices: [
+            ...state.cardInvoices.filter((ci) => !(ci.cardId === cardId && ci.month === month && ci.year === year)),
+            invoiceRecord,
+          ],
+        }));
+        saveDocToFirestore('cardInvoices', invoiceRecord);
+
+        // Record variable expense for the total invoice payment in the bank
         const defaultCatId =
           get().categories.find((c) => c.name.toLowerCase().includes('cartão') || c.name.toLowerCase().includes('fatura'))?.id ||
           get().categories[0]?.id ||
           'cat_despesas';
 
         get().addVariableExpense({
-          description: `Pagamento Fatura ${card.name}`,
+          description: `Pagamento Fatura ${card.name} - ${monthStr}/${year}`,
           categoryId: defaultCatId,
           amount: invoiceAmount,
           date: getCurrentDateFormatted(),
           paymentMethod: 'Débito',
           bankId: fromBankId,
           status: 'Pago',
-          notes: `Pagamento de fatura do cartão ${card.name}`,
+          notes: `[INVOICE_PAYMENT:${cardId}_${year}_${monthStr}] Pagamento total da fatura ${monthStr}/${year} do cartão ${card.name}`,
         });
 
         get().logAudit(
           'cartoes',
           'Pagamento',
-          `Fatura do cartão ${card.name} no valor de R$ ${invoiceAmount} paga utilizando a conta ${bank.name}`
+          `Fatura de ${monthStr}/${year} do cartão ${card.name} no valor de R$ ${invoiceAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} paga utilizando a conta ${bank.name}`
         );
 
-        return true;
+        return { success: true };
+      },
+
+      undoCardInvoicePayment: (cardId, month, year) => {
+        const card = get().cards.find((c) => c.id === cardId);
+        if (!card) return { success: false, error: 'Cartão não encontrado.' };
+
+        const monthStr = String(month).padStart(2, '0');
+        const invoiceTag = `[INVOICE_PAYMENT:${cardId}_${year}_${monthStr}]`;
+
+        const matchingInvoices = get().cardInvoices.filter(
+          (ci) => ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year)
+        );
+
+        if (matchingInvoices.length === 0) {
+          // Check if there are variable expenses to undo even if cardInvoices document wasn't created
+          const orphanExpenses = get().variableExpenses.filter(
+            (ve) =>
+              (ve.notes && ve.notes.includes(invoiceTag)) ||
+              (ve.description.includes(`${monthStr}/${year}`) &&
+                (ve.description.toLowerCase().includes('fatura') ||
+                  ve.description.toLowerCase().includes(card.name.toLowerCase())))
+          );
+
+          if (orphanExpenses.length === 0) {
+            return { success: false, error: 'Nenhum pagamento registrado para esta fatura.' };
+          }
+        }
+
+        const totalPaidAmount = matchingInvoices.reduce((sum, ci) => sum + (ci.amount || 0), 0);
+
+        // Remove matching cardInvoices from Firestore and state
+        for (const ci of matchingInvoices) {
+          deleteDocFromFirestore('cardInvoices', ci.id);
+        }
+
+        // Estorna o limite no cartão (adiciona de volta o limite utilizado)
+        const updatedLimitUsed = Math.min(card.limitTotal, card.limitUsed + totalPaidAmount);
+        const updatedLimitAvailable = Math.max(0, card.limitTotal - updatedLimitUsed);
+        const updatedCard = { ...card, limitUsed: updatedLimitUsed, limitAvailable: updatedLimitAvailable };
+
+        set((state) => ({
+          cards: state.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+        }));
+        saveDocToFirestore('cards', updatedCard);
+
+        // Remove as despesas variáveis geradas para esta fatura no banco (para estornar o saldo no banco)
+        const expensesToRemove = get().variableExpenses.filter(
+          (ve) =>
+            (ve.notes && ve.notes.includes(invoiceTag)) ||
+            (ve.description.includes(`${monthStr}/${year}`) &&
+              (ve.description.toLowerCase().includes('fatura') ||
+                ve.description.toLowerCase().includes(card.name.toLowerCase())))
+        );
+
+        for (const exp of expensesToRemove) {
+          deleteDocFromFirestore('variableExpenses', exp.id);
+        }
+
+        set((state) => ({
+          variableExpenses: state.variableExpenses.filter((ve) => !expensesToRemove.some((r) => r.id === ve.id)),
+          cardInvoices: state.cardInvoices.filter(
+            (ci) => !(ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year))
+          ),
+        }));
+
+        // Recalcula saldos das contas bancárias
+        get().recalculateBankBalances();
+
+        get().logAudit(
+          'cartoes',
+          'Desfazer Pagamento',
+          `Pagamento da fatura de ${monthStr}/${year} do cartão ${card.name} foi desfeito. Fatura retornou para Em Aberto.`
+        );
+
+        return { success: true };
+      },
+
+      syncCardInvoiceBankPayment: (cardId, month, year) => {
+        const card = get().cards.find((c) => c.id === cardId);
+        if (!card) return;
+
+        const monthStr = String(month).padStart(2, '0');
+        const invoiceTag = `[INVOICE_PAYMENT:${cardId}_${year}_${monthStr}]`;
+
+        const bankPayments = get().variableExpenses.filter(
+          (ve) =>
+            (ve.notes && ve.notes.includes(invoiceTag)) ||
+            (ve.description.includes(`${monthStr}/${year}`) &&
+              (ve.description.toLowerCase().includes('fatura') ||
+                ve.description.toLowerCase().includes(card.name.toLowerCase())))
+        );
+
+        const matchingInvoices = get().cardInvoices.filter(
+          (ci) => ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year)
+        );
+
+        if (bankPayments.length === 0 && matchingInvoices.length === 0) {
+          return;
+        }
+
+        // Calculate current sum of active card purchases for this invoice
+        const allCardExpenses = get().variableExpenses.filter(
+          (ve) => ve.paymentMethod === 'Cartão' && ve.cardId === cardId
+        );
+
+        let newInvoiceTotal = 0;
+        for (const exp of allCardExpenses) {
+          const count = exp.installmentsCount || 1;
+          const instAmt = exp.installmentAmount || exp.amount / count;
+          for (let i = 1; i <= count; i++) {
+            const comp = getInstallmentCompetence(exp.date, card.closingDay, i);
+            if (Number(comp.month) === Number(month) && Number(comp.year) === Number(year)) {
+              newInvoiceTotal += instAmt;
+            }
+          }
+        }
+
+        if (newInvoiceTotal <= 0) {
+          // All purchases on this invoice were deleted! Delete bank payment & cardInvoice record.
+          for (const bp of bankPayments) {
+            deleteDocFromFirestore('variableExpenses', bp.id);
+          }
+          for (const ci of matchingInvoices) {
+            deleteDocFromFirestore('cardInvoices', ci.id);
+          }
+
+          set((state) => ({
+            variableExpenses: state.variableExpenses.filter((ve) => !bankPayments.some((bp) => bp.id === ve.id)),
+            cardInvoices: state.cardInvoices.filter(
+              (ci) => !(ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year))
+            ),
+          }));
+
+          get().recalculateBankBalances();
+        } else {
+          // Invoice still has active purchases, adjust bank payment & cardInvoice amount to match new total!
+          for (const bp of bankPayments) {
+            const updatedBp = { ...bp, amount: newInvoiceTotal };
+            saveDocToFirestore('variableExpenses', updatedBp);
+          }
+          for (const ci of matchingInvoices) {
+            const updatedCi = { ...ci, amount: newInvoiceTotal };
+            saveDocToFirestore('cardInvoices', updatedCi);
+          }
+
+          set((state) => ({
+            variableExpenses: state.variableExpenses.map((ve) => {
+              const match = bankPayments.find((bp) => bp.id === ve.id);
+              return match ? { ...ve, amount: newInvoiceTotal } : ve;
+            }),
+            cardInvoices: state.cardInvoices.map((ci) => {
+              const match = matchingInvoices.find((m) => m.id === ci.id);
+              return match ? { ...ci, amount: newInvoiceTotal } : ci;
+            }),
+          }));
+
+          get().recalculateBankBalances();
+        }
       },
 
       // Categories
@@ -1290,6 +1571,17 @@ export const useFinancialStore = create<FinancialStore>()(
         saveDocToFirestore('variableExpenses', newExp);
         get().recalculateBankBalances();
 
+        if (newExp.paymentMethod === 'Cartão' && newExp.cardId) {
+          const card = get().cards.find((c) => c.id === newExp.cardId);
+          if (card) {
+            const count = newExp.installmentsCount || 1;
+            for (let i = 1; i <= count; i++) {
+              const comp = getInstallmentCompetence(newExp.date, card.closingDay, i);
+              get().syncCardInvoiceBankPayment(newExp.cardId, comp.month, comp.year);
+            }
+          }
+        }
+
         get().logAudit('contas_variaveis', 'Inclusão', `Conta variável "${newExp.description}" lançada (R$ ${newExp.amount})`);
       },
 
@@ -1331,6 +1623,17 @@ export const useFinancialStore = create<FinancialStore>()(
         saveDocToFirestore('variableExpenses', updated);
         get().recalculateBankBalances();
 
+        if (updated.paymentMethod === 'Cartão' && updated.cardId) {
+          const card = get().cards.find((c) => c.id === updated.cardId);
+          if (card) {
+            const count = updated.installmentsCount || 1;
+            for (let i = 1; i <= count; i++) {
+              const comp = getInstallmentCompetence(updated.date, card.closingDay, i);
+              get().syncCardInvoiceBankPayment(updated.cardId, comp.month, comp.year);
+            }
+          }
+        }
+
         get().logAudit('contas_variaveis', 'Alteração', `Conta variável "${updated.description}" atualizada`);
       },
 
@@ -1342,7 +1645,71 @@ export const useFinancialStore = create<FinancialStore>()(
 
         let cards = get().cards;
 
-        if (exp.paymentMethod === 'Cartão' && exp.cardId) {
+        // Check if this variable expense was created for a card invoice payment
+        if (exp.notes && exp.notes.includes('[INVOICE_PAYMENT:')) {
+          const match = exp.notes.match(/\[INVOICE_PAYMENT:([^_]+)_(\d{4})_(\d{2})\]/);
+          if (match) {
+            const [, cardId, yearStr, monthStr] = match;
+            const year = Number(yearStr);
+            const month = Number(monthStr);
+
+            // Remove matching cardInvoice records so invoice becomes Em Aberto
+            const matchingInvoices = get().cardInvoices.filter(
+              (ci) => ci.cardId === cardId && Number(ci.month) === month && Number(ci.year) === year
+            );
+            for (const ci of matchingInvoices) {
+              deleteDocFromFirestore('cardInvoices', ci.id);
+            }
+
+            set((state) => ({
+              cardInvoices: state.cardInvoices.filter(
+                (ci) => !(ci.cardId === cardId && Number(ci.month) === month && Number(ci.year) === year)
+              ),
+            }));
+
+            // Restore credit card limit used
+            const card = get().cards.find((c) => c.id === cardId);
+            if (card) {
+              const updatedLimitUsed = Math.min(card.limitTotal, card.limitUsed + exp.amount);
+              const updatedCard = {
+                ...card,
+                limitUsed: updatedLimitUsed,
+                limitAvailable: Math.max(0, card.limitTotal - updatedLimitUsed),
+              };
+              cards = cards.map((c) => (c.id === cardId ? updatedCard : c));
+              saveDocToFirestore('cards', updatedCard);
+            }
+          }
+        } else if (exp.description.toLowerCase().includes('fatura')) {
+          const match = exp.description.match(/(\d{2})\/(\d{4})/);
+          if (match) {
+            const month = Number(match[1]);
+            const year = Number(match[2]);
+            const card = cards.find((c) => exp.description.toLowerCase().includes(c.name.toLowerCase()));
+            if (card) {
+              const matchingInvoices = get().cardInvoices.filter(
+                (ci) => ci.cardId === card.id && Number(ci.month) === month && Number(ci.year) === year
+              );
+              for (const ci of matchingInvoices) {
+                deleteDocFromFirestore('cardInvoices', ci.id);
+              }
+              set((state) => ({
+                cardInvoices: state.cardInvoices.filter(
+                  (ci) => !(ci.cardId === card.id && Number(ci.month) === month && Number(ci.year) === year)
+                ),
+              }));
+
+              const updatedLimitUsed = Math.min(card.limitTotal, card.limitUsed + exp.amount);
+              const updatedCard = {
+                ...card,
+                limitUsed: updatedLimitUsed,
+                limitAvailable: Math.max(0, card.limitTotal - updatedLimitUsed),
+              };
+              cards = cards.map((c) => (c.id === card.id ? updatedCard : c));
+              saveDocToFirestore('cards', updatedCard);
+            }
+          }
+        } else if (exp.paymentMethod === 'Cartão' && exp.cardId) {
           cards = cards.map((c) => {
             if (c.id === exp.cardId) {
               const used = Math.max(0, c.limitUsed - exp.amount);
@@ -1358,6 +1725,18 @@ export const useFinancialStore = create<FinancialStore>()(
           cards,
           variableExpenses: state.variableExpenses.filter((v) => v.id !== id),
         }));
+
+        if (exp.paymentMethod === 'Cartão' && exp.cardId) {
+          const card = get().cards.find((c) => c.id === exp.cardId);
+          if (card) {
+            const count = exp.installmentsCount || 1;
+            for (let i = 1; i <= count; i++) {
+              const comp = getInstallmentCompetence(exp.date, card.closingDay, i);
+              get().syncCardInvoiceBankPayment(exp.cardId, comp.month, comp.year);
+            }
+          }
+        }
+
         get().recalculateBankBalances();
 
         get().logAudit('contas_variaveis', 'Exclusão', `Conta variável "${exp.description}" excluída definitivamente`);
@@ -1538,14 +1917,7 @@ export const useFinancialStore = create<FinancialStore>()(
 
         // Balance / limit validation for payments
         if (isNowPaid && !wasPaid) {
-          if (bank) {
-            if (bank.currentBalance < amountToDebit) {
-              return {
-                success: false,
-                error: `Pagamento Rejeitado: Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor da parcela: R$ ${amountToDebit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
-              };
-            }
-          } else if (card) {
+          if (card) {
             if (card.limitAvailable < amountToDebit) {
               return {
                 success: false,
@@ -1667,14 +2039,7 @@ export const useFinancialStore = create<FinancialStore>()(
         );
         const netPayoffVal = unpaidInsts.reduce((acc, i) => acc + i.principal + i.iof + i.insurance + i.fees, 0);
 
-        if (bank) {
-          if (bank.currentBalance < netPayoffVal) {
-            return {
-              success: false,
-              error: `Quitação Rejeitada: Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor necessário: R$ ${netPayoffVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
-            };
-          }
-        } else if (card) {
+        if (card) {
           if (card.limitAvailable < netPayoffVal) {
             return {
               success: false,
@@ -1742,14 +2107,7 @@ export const useFinancialStore = create<FinancialStore>()(
         const bank = get().banks.find((b) => b.id === sourceId);
         const card = get().cards.find((c) => c.id === sourceId);
 
-        if (bank) {
-          if (bank.currentBalance < extraAmount) {
-            return {
-              success: false,
-              error: `Amortização Rejeitada: Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor: R$ ${extraAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
-            };
-          }
-        } else if (card) {
+        if (card) {
           if (card.limitAvailable < extraAmount) {
             return {
               success: false,
@@ -2026,6 +2384,33 @@ export const useFinancialStore = create<FinancialStore>()(
           'Inclusão',
           `Transferência de R$ ${transferData.amount} de ${originBank.name} para ${destBank.name}`
         );
+      },
+
+      deleteTransfer: (id) => {
+        const trf = get().transfers.find((t) => t.id === id);
+        if (!trf) return;
+
+        deleteDocFromFirestore('transfers', id);
+        set((state) => ({
+          transfers: state.transfers.filter((t) => t.id !== id),
+        }));
+        get().recalculateBankBalances();
+
+        get().logAudit('transferencias', 'Exclusão', `Transferência de R$ ${trf.amount} excluída com sucesso`);
+      },
+
+      updateTransfer: (id, updates) => {
+        const trf = get().transfers.find((t) => t.id === id);
+        if (!trf) return;
+
+        const updated = { ...trf, ...updates };
+        set((state) => ({
+          transfers: state.transfers.map((t) => (t.id === id ? updated : t)),
+        }));
+        saveDocToFirestore('transfers', updated);
+        get().recalculateBankBalances();
+
+        get().logAudit('transferencias', 'Alteração', `Transferência de R$ ${updated.amount} atualizada com sucesso`);
       },
 
       // Trash Bin Restore & Purge

@@ -6,6 +6,7 @@ import {
   formatCurrency,
   formatDate,
   getInvoiceCompetence,
+  getInvoiceDueDate,
   getInstallmentCompetence,
   calculateInstallmentAmounts,
   getCurrentDateFormatted,
@@ -39,9 +40,13 @@ import {
   FileSpreadsheet,
   FileText,
   AlertTriangle,
+  AlertCircle,
   Search,
   PieChart,
   Pencil,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
 } from 'lucide-react';
 
 interface CartoesModuleProps {
@@ -53,11 +58,13 @@ const CHART_COLORS = ['#820AD1', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8
 export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForInvoice }) => {
   const {
     cards,
+    cardInvoices,
     banks,
     addCard,
     updateCard,
     deleteCardSmart,
     payCardInvoice,
+    undoCardInvoicePayment,
     variableExpenses,
     addVariableExpense,
     updateVariableExpense,
@@ -95,14 +102,40 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
   const [payModalError, setPayModalError] = useState<string | null>(null);
   const [payModalSuccess, setPayModalSuccess] = useState<boolean>(false);
 
+  // Undo Invoice Payment Modal State
+  const [undoPaymentTarget, setUndoPaymentTarget] = useState<{ cardId: string; month: number; year: number } | null>(null);
+  const [undoPaymentMessage, setUndoPaymentMessage] = useState<string | null>(null);
+
+  // Invoice Month Navigation State
+  const now = new Date();
+  const [selectedInvoiceMonth, setSelectedInvoiceMonth] = useState<number>(now.getMonth() + 1);
+  const [selectedInvoiceYear, setSelectedInvoiceYear] = useState<number>(now.getFullYear());
+
+  const [payModalMonth, setPayModalMonth] = useState<number>(now.getMonth() + 1);
+  const [payModalYear, setPayModalYear] = useState<number>(now.getFullYear());
+
   // Invoice Filters
-  const [filterType, setFilterType] = useState<'fatura_atual' | 'competencia' | 'periodo'>('fatura_atual');
-  const [selectedCompetence, setSelectedCompetence] = useState<string>('07/2026');
-  const [startDate, setStartDate] = useState<string>('2026-07-01');
-  const [endDate, setEndDate] = useState<string>('2026-07-31');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterSubcategory, setFilterSubcategory] = useState<string>('all');
   const [filterInstallmentType, setFilterInstallmentType] = useState<'all' | 'avista' | 'parcelado'>('all');
+
+  const handlePrevInvoiceMonth = () => {
+    if (selectedInvoiceMonth === 1) {
+      setSelectedInvoiceMonth(12);
+      setSelectedInvoiceYear((prev) => prev - 1);
+    } else {
+      setSelectedInvoiceMonth((prev) => prev - 1);
+    }
+  };
+
+  const handleNextInvoiceMonth = () => {
+    if (selectedInvoiceMonth === 12) {
+      setSelectedInvoiceMonth(1);
+      setSelectedInvoiceYear((prev) => prev + 1);
+    } else {
+      setSelectedInvoiceMonth((prev) => prev + 1);
+    }
+  };
 
   // Purchases Tab Search & Filter State
   const [purchasesSearchTerm, setPurchasesSearchTerm] = useState('');
@@ -320,20 +353,59 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
   // Handle Invoice Payment Execution
   const handleExecutePayment = () => {
     if (!activeInvoiceCard || !paymentBankId) return;
-    const ok = payCardInvoice(activeInvoiceCard.id, new Date().getMonth() + 1, new Date().getFullYear(), paymentBankId);
-    if (ok) {
+
+    const unrolled = getUnrolledInvoiceInstallments(activeInvoiceCard);
+    const monthItems = unrolled.filter(
+      (item) => item.month === selectedInvoiceMonth && item.year === selectedInvoiceYear
+    );
+    const totalVal = monthItems.reduce((acc, item) => acc + item.installmentAmount, 0);
+
+    const res = payCardInvoice(
+      activeInvoiceCard.id,
+      selectedInvoiceMonth,
+      selectedInvoiceYear,
+      paymentBankId,
+      totalVal
+    );
+
+    if (res.success) {
       setPaymentSuccess(true);
       setTimeout(() => {
         setPaymentSuccess(false);
-        setActiveInvoiceCard(null);
-      }, 1500);
+      }, 2000);
+    } else if (res.error) {
+      alert(res.error);
     }
+  };
+
+  const handleUndoInvoicePayment = (cardId: string, month: number, year: number) => {
+    setUndoPaymentTarget({ cardId, month, year });
+  };
+
+  const confirmUndoInvoicePayment = () => {
+    if (!undoPaymentTarget) return;
+    const { cardId, month, year } = undoPaymentTarget;
+    const monthStr = String(month).padStart(2, '0');
+    const res = undoCardInvoicePayment(cardId, month, year);
+    if (res.success) {
+      setUndoPaymentMessage(`Pagamento da fatura ${monthStr}/${year} desfeito com sucesso! A fatura retornou para "Em Aberto".`);
+      setTimeout(() => setUndoPaymentMessage(null), 3500);
+    } else if (res.error) {
+      setUndoPaymentMessage(`Erro: ${res.error}`);
+      setTimeout(() => setUndoPaymentMessage(null), 4000);
+    }
+    setUndoPaymentTarget(null);
   };
 
   const openPayInvoiceModal = (card?: Card) => {
     const targetCard = card || cards[0];
     setPayModalCardId(targetCard?.id || '');
     setPayModalBankId(banks[0]?.id || '');
+    if (targetCard) {
+      const comp = getInvoiceCompetence(getCurrentDateFormatted(), targetCard.closingDay);
+      setPayModalMonth(comp.month);
+      setPayModalYear(comp.year);
+    }
     setPayModalError(null);
     setPayModalSuccess(false);
     setIsPayInvoiceModalOpen(true);
@@ -360,29 +432,33 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
       return;
     }
 
-    if (card.limitUsed <= 0) {
-      setPayModalError(`O cartão "${card.name}" não possui fatura pendente (Limite Utilizado: R$ 0,00).`);
-      return;
-    }
+    const unrolled = getUnrolledInvoiceInstallments(card);
+    const monthItems = unrolled.filter((i) => i.month === payModalMonth && i.year === payModalYear);
+    const invoiceVal = monthItems.reduce((sum, item) => sum + item.installmentAmount, 0);
 
-    if (bank.currentBalance < card.limitUsed) {
+    if (invoiceVal <= 0) {
       setPayModalError(
-        `Pagamento Rejeitado: Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Fatura do cartão: R$ ${card.limitUsed.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+        `A fatura do mês ${String(payModalMonth).padStart(2, '0')}/${payModalYear} do cartão "${card.name}" não possui valores pendentes a pagar.`
       );
       return;
     }
 
-    const currentMonth = new Date().getMonth() + 1;
-    const currentYear = new Date().getFullYear();
-    const ok = payCardInvoice(payModalCardId, currentMonth, currentYear, payModalBankId);
-    if (ok) {
+    if (bank.currentBalance < invoiceVal) {
+      setPayModalError(
+        `Pagamento Rejeitado: Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor da fatura: R$ ${invoiceVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+      );
+      return;
+    }
+
+    const res = payCardInvoice(payModalCardId, payModalMonth, payModalYear, payModalBankId, invoiceVal);
+    if (res.success) {
       setPayModalSuccess(true);
       setTimeout(() => {
         setPayModalSuccess(false);
         setIsPayInvoiceModalOpen(false);
       }, 1800);
     } else {
-      setPayModalError('Ocorreu um erro ao processar o pagamento da fatura.');
+      setPayModalError(res.error || 'Ocorreu um erro ao processar o pagamento da fatura.');
     }
   };
 
@@ -569,7 +645,9 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
           <button
             onClick={() => {
               setActiveInvoiceCard(r);
-              setSelectedCompetence(getCurrentCardInvoiceCompetence(r));
+              const comp = getInvoiceCompetence(getCurrentDateFormatted(), r.closingDay);
+              setSelectedInvoiceMonth(comp.month);
+              setSelectedInvoiceYear(comp.year);
             }}
             className="px-2.5 py-1 bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-lg text-xs font-bold hover:bg-purple-100 dark:hover:bg-purple-900 transition-colors flex items-center gap-1 shadow-sm"
           >
@@ -1167,8 +1245,15 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
                   <strong className="text-slate-700 dark:text-slate-300">
                     {banks.find((b) => b.id === activeInvoiceCard.bankId)?.name || 'N/A'}
                   </strong>{' '}
-                  • Fechamento: dia <strong>{activeInvoiceCard.closingDay}</strong> | Vencimento: dia{' '}
-                  <strong>{activeInvoiceCard.dueDay}</strong>
+                  • Fechamento: dia <strong>{activeInvoiceCard.closingDay}</strong> | Vencimento da Fatura:{' '}
+                  <strong className="text-purple-600 dark:text-purple-400 font-mono">
+                    {getInvoiceDueDate(
+                      selectedInvoiceMonth,
+                      selectedInvoiceYear,
+                      activeInvoiceCard.closingDay,
+                      activeInvoiceCard.dueDay
+                    ).formattedDate}
+                  </strong>
                 </p>
               </div>
             </div>
@@ -1185,22 +1270,8 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
               (() => {
                 const unrolled = getUnrolledInvoiceInstallments(activeInvoiceCard);
 
-                const currentCompStr = getCurrentCardInvoiceCompetence(activeInvoiceCard);
-                const activeCompStr = filterType === 'fatura_atual' ? currentCompStr : selectedCompetence;
-
                 const filteredInstallments = unrolled
-                  .filter((item) => {
-                    if (filterType === 'fatura_atual') {
-                      return item.competenceStr === currentCompStr;
-                    }
-                    if (filterType === 'competencia') {
-                      return item.competenceStr === selectedCompetence;
-                    }
-                    if (filterType === 'periodo') {
-                      return item.date >= startDate && item.date <= endDate;
-                    }
-                    return true;
-                  })
+                  .filter((item) => item.month === selectedInvoiceMonth && item.year === selectedInvoiceYear)
                   .filter((item) => {
                     if (filterCategory !== 'all' && item.categoryId !== filterCategory) return false;
                     if (filterSubcategory !== 'all' && item.subcategoryId !== filterSubcategory) return false;
@@ -1214,16 +1285,42 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
                 // Quantidade de compras únicas
                 const uniquePurchasesCount = new Set(filteredInstallments.map((i) => i.purchaseId)).size;
 
+                // Status de Pagamento da Fatura no estado cardInvoices
+                const paidInvoiceRecord = cardInvoices.find(
+                  (ci) =>
+                    ci.cardId === activeInvoiceCard.id &&
+                    Number(ci.month) === Number(selectedInvoiceMonth) &&
+                    Number(ci.year) === Number(selectedInvoiceYear) &&
+                    ci.status === 'Paga'
+                );
+                const isInvoicePaid = !!paidInvoiceRecord;
+
+                const invoiceDueDateInfo = getInvoiceDueDate(
+                  selectedInvoiceMonth,
+                  selectedInvoiceYear,
+                  activeInvoiceCard.closingDay,
+                  activeInvoiceCard.dueDay
+                );
+
                 return (
                   <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
                     {/* Header Limite & Totais do Demonstrativo */}
-                    <div className="p-4 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 rounded-2xl grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="p-4 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 rounded-2xl grid grid-cols-2 md:grid-cols-5 gap-3">
                       <div>
                         <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 uppercase block">
-                          Competência
+                          Fatura Mês
                         </span>
-                        <span className="text-base font-black text-purple-900 dark:text-purple-100">
-                          {activeCompStr}
+                        <span className="text-base font-black text-purple-900 dark:text-purple-100 font-mono">
+                          {String(selectedInvoiceMonth).padStart(2, '0')}/{selectedInvoiceYear}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 uppercase block">
+                          Vencimento
+                        </span>
+                        <span className="text-base font-black text-purple-900 dark:text-purple-100 font-mono">
+                          {invoiceDueDateInfo.formattedDate}
                         </span>
                       </div>
 
@@ -1251,98 +1348,68 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
                       </div>
                     </div>
 
-                    {/* Filtros da Fatura */}
+                    {/* Controles de Navegação por Mês (Setas) e Filtros */}
                     <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl space-y-3 border border-slate-200 dark:border-slate-800">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-bold text-slate-700 dark:text-slate-300">Consulta por:</span>
-                        <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px] font-bold">
-                          <button
-                            onClick={() => setFilterType('fatura_atual')}
-                            className={`px-3 py-1 rounded-lg transition-all ${
-                              filterType === 'fatura_atual'
-                                ? 'bg-purple-600 text-white shadow-sm'
-                                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            Fatura Atual ({currentCompStr})
-                          </button>
-                          <button
-                            onClick={() => setFilterType('competencia')}
-                            className={`px-3 py-1 rounded-lg transition-all ${
-                              filterType === 'competencia'
-                                ? 'bg-purple-600 text-white shadow-sm'
-                                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            Competência
-                          </button>
-                          <button
-                            onClick={() => setFilterType('periodo')}
-                            className={`px-3 py-1 rounded-lg transition-all ${
-                              filterType === 'periodo'
-                                ? 'bg-purple-600 text-white shadow-sm'
-                                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            Período Customizado
-                          </button>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">Mês da Fatura:</span>
+                          <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-xl shadow-sm">
+                            <button
+                              onClick={handlePrevInvoiceMonth}
+                              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-purple-600 dark:text-purple-400 transition-colors"
+                              title="Mês Anterior"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            <span className="font-black text-xs text-purple-700 dark:text-purple-300 min-w-[60px] text-center font-mono">
+                              {String(selectedInvoiceMonth).padStart(2, '0')}/{selectedInvoiceYear}
+                            </span>
+                            <button
+                              onClick={handleNextInvoiceMonth}
+                              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-purple-600 dark:text-purple-400 transition-colors"
+                              title="Próximo Mês"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          {isInvoicePaid ? (
+                            (() => {
+                              const paidAmount = paidInvoiceRecord?.amount || 0;
+                              const remaining = totalInvoiceValue - paidAmount;
+                              if (remaining > 0) {
+                                return (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 dark:bg-blue-950/80 border border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-300 font-black rounded-xl text-xs">
+                                    <AlertTriangle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                    <span>Novos Lançamentos (Restante: {formatCurrency(remaining)})</span>
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-black rounded-xl text-xs">
+                                  <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                  <span>Fatura PAGA</span>
+                                </span>
+                              );
+                            })()
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-black rounded-xl text-xs">
+                              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                              <span>Em Aberto</span>
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      {filterType === 'competencia' && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <label className="font-bold text-slate-600 dark:text-slate-400">Selecionar Mês/Ano:</label>
-                          <select
-                            value={selectedCompetence}
-                            onChange={(e) => setSelectedCompetence(e.target.value)}
-                            className="p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
-                          >
-                            <option value="05/2026">05/2026</option>
-                            <option value="06/2026">06/2026</option>
-                            <option value="07/2026">07/2026 (Atual)</option>
-                            <option value="08/2026">08/2026</option>
-                            <option value="09/2026">09/2026</option>
-                            <option value="10/2026">10/2026</option>
-                            <option value="11/2026">11/2026</option>
-                            <option value="12/2026">12/2026</option>
-                            <option value="01/2027">01/2027</option>
-                            <option value="02/2027">02/2027</option>
-                            <option value="03/2027">03/2027</option>
-                            <option value="04/2027">04/2027</option>
-                          </select>
-                        </div>
-                      )}
-
-                      {filterType === 'periodo' && (
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Data Início</label>
-                            <input
-                              type="date"
-                              value={startDate}
-                              onChange={(e) => setStartDate(e.target.value)}
-                              className="w-full p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Data Fim</label>
-                            <input
-                              type="date"
-                              value={endDate}
-                              onChange={(e) => setEndDate(e.target.value)}
-                              className="w-full p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-3 gap-2 pt-1 text-[11px]">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px]">
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500">Tipo de Compra</label>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Tipo de Compra</label>
                           <select
                             value={filterInstallmentType}
                             onChange={(e) => setFilterInstallmentType(e.target.value as any)}
-                            className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                            className="w-full p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-medium text-xs"
                           >
                             <option value="all">Todas (À Vista e Parceladas)</option>
                             <option value="avista">Apenas À Vista (1x)</option>
@@ -1351,14 +1418,14 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500">Categoria</label>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Categoria</label>
                           <select
                             value={filterCategory}
                             onChange={(e) => {
                               setFilterCategory(e.target.value);
                               setFilterSubcategory('all');
                             }}
-                            className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                            className="w-full p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-medium text-xs"
                           >
                             <option value="all">Todas as Categorias</option>
                             {categories.map((c) => (
@@ -1370,11 +1437,11 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500">Subcategoria</label>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Subcategoria</label>
                           <select
                             value={filterSubcategory}
                             onChange={(e) => setFilterSubcategory(e.target.value)}
-                            className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                            className="w-full p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-medium text-xs"
                           >
                             <option value="all">Todas as Subcategorias</option>
                             {subcategories
@@ -1489,33 +1556,126 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
                       </div>
                     </div>
 
-                    {/* Formulário de Pagamento da Fatura */}
-                    {totalInvoiceValue > 0 && (
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                        <label className="block font-bold text-slate-800 dark:text-slate-200 text-xs">
-                          Pagar/Quitar esta Fatura ({formatCurrency(totalInvoiceValue)}):
-                        </label>
-                        <select
-                          value={paymentBankId}
-                          onChange={(e) => setPaymentBankId(e.target.value)}
-                          className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
-                        >
-                          {banks.map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.name} (Saldo Atual: {formatCurrency(b.currentBalance)})
-                            </option>
-                          ))}
-                        </select>
+                    {/* Formulário de Pagamento e Ações da Fatura */}
+                    {(() => {
+                      const paidAmount = paidInvoiceRecord?.amount || 0;
+                      const remainingAmount = totalInvoiceValue - paidAmount;
 
-                        <button
-                          onClick={handleExecutePayment}
-                          className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-colors flex items-center justify-center gap-2"
-                        >
-                          <CheckCircle className="w-4 h-4" />
-                          <span>Pagar Fatura de {activeCompStr} ({formatCurrency(totalInvoiceValue)})</span>
-                        </button>
-                      </div>
-                    )}
+                      if (isInvoicePaid && remainingAmount <= 0) {
+                        return (
+                          <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <CheckCircle className="w-6 h-6 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <div>
+                                <p className="font-bold text-emerald-900 dark:text-emerald-200 text-xs">
+                                  Fatura de {String(selectedInvoiceMonth).padStart(2, '0')}/{selectedInvoiceYear} Quitada!
+                                </p>
+                                <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                                  Pagamento efetuado em {paidInvoiceRecord?.paidDate}. O valor total de {formatCurrency(paidAmount)} foi debitado do saldo bancário e o limite foi liberado.
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleUndoInvoicePayment(activeInvoiceCard.id, selectedInvoiceMonth, selectedInvoiceYear)}
+                              className="px-3.5 py-2 bg-red-100 hover:bg-red-200 dark:bg-red-950/80 dark:hover:bg-red-900 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 font-bold rounded-xl text-xs transition-colors shrink-0 flex items-center gap-1.5 shadow-sm"
+                              title="Desfazer pagamento da fatura"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                              <span>Desfazer Pagamento</span>
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      if (isInvoicePaid && remainingAmount > 0) {
+                        return (
+                          <div className="p-4 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-2xl space-y-3">
+                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+                              <div>
+                                <span className="inline-block px-2 py-0.5 bg-blue-100 dark:bg-blue-900/80 text-blue-800 dark:text-blue-200 font-bold rounded text-[10px] uppercase mb-1">
+                                  Novos Lançamentos Detectados
+                                </span>
+                                <p className="font-bold text-blue-950 dark:text-blue-100 text-xs">
+                                  Foram adicionadas novas compras/parcelas nesta fatura referente ao mês já pago.
+                                </p>
+                                <p className="text-[11px] text-blue-800 dark:text-blue-300 mt-0.5">
+                                  Valor já pago: <strong className="font-mono">{formatCurrency(paidAmount)}</strong> | Novo Total: <strong className="font-mono">{formatCurrency(totalInvoiceValue)}</strong> | Restante Pendente: <strong className="font-mono text-amber-600 dark:text-amber-400">{formatCurrency(remainingAmount)}</strong>
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => handleUndoInvoicePayment(activeInvoiceCard.id, selectedInvoiceMonth, selectedInvoiceYear)}
+                                className="px-3 py-1.5 bg-red-100 hover:bg-red-200 dark:bg-red-950 dark:hover:bg-red-900 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 font-bold rounded-xl text-xs transition-colors shrink-0 flex items-center gap-1.5 shadow-sm"
+                                title="Desfazer pagamento da fatura"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Desfazer Pagamento</span>
+                              </button>
+                            </div>
+
+                            <div className="pt-2 border-t border-blue-200 dark:border-blue-900/60 space-y-2">
+                              <label className="block font-bold text-slate-800 dark:text-slate-200 text-xs">
+                                Selecione a conta para pagar o saldo restante ({formatCurrency(remainingAmount)}):
+                              </label>
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <select
+                                  value={paymentBankId}
+                                  onChange={(e) => setPaymentBankId(e.target.value)}
+                                  className="flex-1 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs"
+                                >
+                                  {banks.map((b) => (
+                                    <option key={b.id} value={b.id}>
+                                      {b.name} (Saldo Disponível: {formatCurrency(b.currentBalance)})
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  onClick={handleExecutePayment}
+                                  className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-colors flex items-center justify-center gap-2 text-xs shrink-0"
+                                >
+                                  <CheckCircle className="w-4 h-4" />
+                                  <span>Pagar Saldo Restante ({formatCurrency(remainingAmount)})</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (totalInvoiceValue > 0) {
+                        return (
+                          <div className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                            <label className="block font-bold text-slate-800 dark:text-slate-200 text-xs">
+                              Pagar Fatura Total de {String(selectedInvoiceMonth).padStart(2, '0')}/{selectedInvoiceYear} ({formatCurrency(totalInvoiceValue)}):
+                            </label>
+                            <select
+                              value={paymentBankId}
+                              onChange={(e) => setPaymentBankId(e.target.value)}
+                              className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs"
+                            >
+                              {banks.map((b) => (
+                                <option key={b.id} value={b.id}>
+                                  {b.name} (Saldo Disponível: {formatCurrency(b.currentBalance)})
+                                </option>
+                              ))}
+                            </select>
+
+                            <button
+                              onClick={handleExecutePayment}
+                              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-colors flex items-center justify-center gap-2 text-xs"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              <span>Pagar Fatura Total ({formatCurrency(totalInvoiceValue)})</span>
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl text-center text-slate-400 text-xs">
+                          Nenhum valor pendente para a fatura de {String(selectedInvoiceMonth).padStart(2, '0')}/{selectedInvoiceYear}.
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })()
@@ -1970,10 +2130,48 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
                 >
                   {cards.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} — Fatura Atual: {formatCurrency(c.limitUsed)} (Limite Disponível: {formatCurrency(c.limitAvailable)})
+                      {c.name} (Limite Disponível: {formatCurrency(c.limitAvailable)})
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Month Navigation for Pay Modal */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Mês da Fatura a Pagar:
+                </label>
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-2 rounded-xl">
+                  <button
+                    onClick={() => {
+                      if (payModalMonth === 1) {
+                        setPayModalMonth(12);
+                        setPayModalYear((y) => y - 1);
+                      } else {
+                        setPayModalMonth((m) => m - 1);
+                      }
+                    }}
+                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-purple-600 dark:text-purple-400"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="font-black text-xs text-purple-700 dark:text-purple-300 min-w-[70px] text-center font-mono">
+                    {String(payModalMonth).padStart(2, '0')}/{payModalYear}
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (payModalMonth === 12) {
+                        setPayModalMonth(1);
+                        setPayModalYear((y) => y + 1);
+                      } else {
+                        setPayModalMonth((m) => m + 1);
+                      }
+                    }}
+                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-purple-600 dark:text-purple-400"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Select Payment Bank */}
@@ -1998,18 +2196,50 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
               {(() => {
                 const selCard = cards.find((c) => c.id === payModalCardId);
                 const selBank = banks.find((b) => b.id === payModalBankId);
-                const faturaVal = selCard ? selCard.limitUsed : 0;
+                const unrolled = selCard ? getUnrolledInvoiceInstallments(selCard) : [];
+                const monthItems = unrolled.filter((i) => i.month === payModalMonth && i.year === payModalYear);
+                const faturaVal = monthItems.reduce((acc, i) => acc + i.installmentAmount, 0);
+
+                const paidRecord = cardInvoices.find(
+                  (ci) =>
+                    ci.cardId === payModalCardId &&
+                    ci.month === payModalMonth &&
+                    ci.year === payModalYear &&
+                    ci.status === 'Paga'
+                );
+                const isAlreadyPaid = !!paidRecord;
+                const paidVal = paidRecord?.amount || 0;
+                const remainingVal = faturaVal - paidVal;
+
                 const saldoVal = selBank ? selBank.currentBalance : 0;
-                const isInsufficient = saldoVal < faturaVal && faturaVal > 0;
+                const amountNeededToPay = isAlreadyPaid ? remainingVal : faturaVal;
+                const isInsufficient = saldoVal < amountNeededToPay && amountNeededToPay > 0;
+                const modalDueDate = selCard
+                  ? getInvoiceDueDate(payModalMonth, payModalYear, selCard.closingDay, selCard.dueDay)
+                  : null;
 
                 return (
                   <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-500 font-medium">Valor da Fatura a Pagar:</span>
+                      <span className="text-slate-500 font-medium">Data de Vencimento da Fatura:</span>
+                      <span className="font-bold text-purple-700 dark:text-purple-300 font-mono text-xs">
+                        {modalDueDate?.formattedDate || '-'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-500 font-medium">Valor Total da Fatura ({String(payModalMonth).padStart(2, '0')}/{payModalYear}):</span>
                       <span className="font-black text-purple-600 dark:text-purple-400 text-sm">
                         {formatCurrency(faturaVal)}
                       </span>
                     </div>
+                    {isAlreadyPaid && (
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-500 font-medium">Valor Já Pago:</span>
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
+                          {formatCurrency(paidVal)}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-500 font-medium">Saldo Atual da Conta ({selBank?.name || 'N/A'}):</span>
                       <span className={`font-bold text-xs ${isInsufficient ? 'text-red-600' : 'text-emerald-600'}`}>
@@ -2017,9 +2247,53 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
                       </span>
                     </div>
 
+                    {isAlreadyPaid && remainingVal <= 0 && (
+                      <div className="p-3 bg-emerald-100 dark:bg-emerald-950/60 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-between gap-2 mt-2">
+                        <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
+                          <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                          <span>Fatura Totalmente Quitada!</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            handleUndoInvoicePayment(payModalCardId, payModalMonth, payModalYear);
+                            setIsPayInvoiceModalOpen(false);
+                          }}
+                          className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shadow-sm"
+                          title="Desfazer pagamento"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Desfazer</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {isAlreadyPaid && remainingVal > 0 && (
+                      <div className="p-3 bg-blue-100 dark:bg-blue-950/60 rounded-xl border border-blue-200 dark:border-blue-800 space-y-2 mt-2">
+                        <div className="flex items-center justify-between gap-2 text-blue-900 dark:text-blue-200 text-xs font-bold">
+                          <span className="flex items-center gap-1">
+                            <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0" />
+                            Novos Lançamentos (Restante: {formatCurrency(remainingVal)})
+                          </span>
+                          <button
+                            onClick={() => {
+                              handleUndoInvoicePayment(payModalCardId, payModalMonth, payModalYear);
+                              setIsPayInvoiceModalOpen(false);
+                            }}
+                            className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold transition-colors flex items-center gap-1"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Desfazer</span>
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-blue-800 dark:text-blue-300">
+                          Ao confirmar, será pago apenas o valor complementar restante de {formatCurrency(remainingVal)}.
+                        </p>
+                      </div>
+                    )}
+
                     {isInsufficient && (
                       <p className="text-[11px] text-red-500 font-bold mt-1">
-                        ⚠️ Atenção: O saldo da conta bancária selecionada é menor que o valor da fatura.
+                        ⚠️ Atenção: O saldo da conta bancária selecionada é menor que o valor a pagar.
                       </p>
                     )}
                   </div>
@@ -2044,6 +2318,66 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal Desfazer / Desvincular Pagamento da Fatura */}
+      {undoPaymentTarget && (() => {
+        const targetCard = cards.find((c) => c.id === undoPaymentTarget.cardId);
+        const monthStr = String(undoPaymentTarget.month).padStart(2, '0');
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 rounded-xl">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Desvincular / Desfazer Pagamento
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Fatura {monthStr}/{undoPaymentTarget.year} - {targetCard?.name || 'Cartão'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                <p className="font-semibold">O que acontecerá ao desfazer:</p>
+                <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-800 dark:text-amber-300">
+                  <li>A fatura retornará imediatamente para o status <strong className="underline">Em Aberto</strong>.</li>
+                  <li>O lançamento de saída gerado no banco será excluído e o saldo da conta será devolvido.</li>
+                  <li>O limite utilizado no cartão de crédito será reajustado.</li>
+                </ul>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setUndoPaymentTarget(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmUndoInvoicePayment}
+                  className="px-4 py-2 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-md flex items-center gap-1.5"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Desvincular Pagamento</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Toast Notification */}
+      {undoPaymentMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 border border-slate-700 animate-fade-in">
+          <CheckCircle className="w-4 h-4 text-emerald-400" />
+          <span>{undoPaymentMessage}</span>
         </div>
       )}
     </div>

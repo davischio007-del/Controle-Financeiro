@@ -292,6 +292,42 @@ export function getInvoiceCompetence(
   return { month: targetMonth, year: targetYear, competenceStr: compStr };
 }
 
+/**
+ * Calculates the exact due date for a card invoice of competence {month, year}.
+ * Rule:
+ * - If dueDay <= closingDay (e.g. closingDay 20, dueDay 1), the due date falls in the NEXT month (subsequente)
+ *   after the invoice closing month.
+ * - If dueDay > closingDay (e.g. closingDay 10, dueDay 20), the due date falls in the SAME month
+ *   as the invoice closing month.
+ */
+export function getInvoiceDueDate(
+  month: number,
+  year: number,
+  closingDay: number,
+  dueDay: number
+): { dateStr: string; formattedDate: string; dueMonth: number; dueYear: number; dueDay: number } {
+  let dueMonth = month;
+  let dueYear = year;
+
+  if (dueDay <= closingDay) {
+    dueMonth += 1;
+    if (dueMonth > 12) {
+      dueMonth = 1;
+      dueYear += 1;
+    }
+  }
+
+  const lastDayOfDueMonth = new Date(dueYear, dueMonth, 0).getDate();
+  const actualDueDay = Math.min(dueDay, lastDayOfDueMonth);
+
+  const monthFormatted = String(dueMonth).padStart(2, '0');
+  const dayFormatted = String(actualDueDay).padStart(2, '0');
+  const dateStr = `${dueYear}-${monthFormatted}-${dayFormatted}`;
+  const formattedDate = `${dayFormatted}/${monthFormatted}/${dueYear}`;
+
+  return { dateStr, formattedDate, dueMonth, dueYear, dueDay: actualDueDay };
+}
+
 // Calculate competence for specific installment index (1-indexed)
 export function getInstallmentCompetence(
   purchaseDateStr: string,

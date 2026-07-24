@@ -93,6 +93,7 @@ export async function initFirebaseSync() {
   await seedIfEmpty('users', store.users);
   await seedIfEmpty('banks', store.banks);
   await seedIfEmpty('cards', store.cards);
+  await seedIfEmpty('cardInvoices', store.cardInvoices);
   await seedIfEmpty('categories', store.categories);
   await seedIfEmpty('subcategories', store.subcategories);
   await seedIfEmpty('incomes', store.incomes);
@@ -132,6 +133,7 @@ export async function initFirebaseSync() {
   bindCollection('users', 'users');
   bindCollection('banks', 'banks');
   bindCollection('cards', 'cards');
+  bindCollection('cardInvoices', 'cardInvoices');
   bindCollection('categories', 'categories');
   bindCollection('subcategories', 'subcategories');
   bindCollection('incomes', 'incomes');
