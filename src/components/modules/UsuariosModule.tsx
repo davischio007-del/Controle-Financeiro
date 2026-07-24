@@ -3,10 +3,10 @@ import { useFinancialStore, USER_PERMISSIONS } from '../../services/storage';
 import { User, UserRole } from '../../types';
 import { DataTable, Column } from '../common/DataTable';
 import { formatDate } from '../../lib/utils';
-import { Key, Lock, X, Ban } from 'lucide-react';
+import { Key, Lock, X, Ban, Trash2 } from 'lucide-react';
 
 export const UsuariosModule: React.FC = () => {
-  const { users, currentUser, addUser, updateUser, toggleBlockUser, resetUserPassword, changeOwnPassword } =
+  const { users, currentUser, addUser, updateUser, deleteUser, toggleBlockUser, resetUserPassword, changeOwnPassword } =
     useFinancialStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -15,6 +15,7 @@ export const UsuariosModule: React.FC = () => {
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [targetPasswordUser, setTargetPasswordUser] = useState<User | null>(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
   // User Form
   const [username, setUsername] = useState('');
@@ -164,17 +165,26 @@ export const UsuariosModule: React.FC = () => {
                 <Key className="w-3.5 h-3.5" />
               </button>
               {r.id !== currentUser?.id && (
-                <button
-                  onClick={() => toggleBlockUser(r.id)}
-                  className={`p-1.5 rounded-lg ${
-                    r.status === 'Ativo'
-                      ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                      : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                  }`}
-                  title={r.status === 'Ativo' ? 'Bloquear Usuário' : 'Desbloquear Usuário'}
-                >
-                  <Ban className="w-3.5 h-3.5" />
-                </button>
+                <>
+                  <button
+                    onClick={() => toggleBlockUser(r.id)}
+                    className={`p-1.5 rounded-lg ${
+                      r.status === 'Ativo'
+                        ? 'bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400'
+                        : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400'
+                    }`}
+                    title={r.status === 'Ativo' ? 'Bloquear Usuário' : 'Desbloquear Usuário'}
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setUserToDelete(r)}
+                    className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 rounded-lg transition-colors"
+                    title="Excluir Usuário"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </>
               )}
             </>
           ) : (
@@ -201,6 +211,17 @@ export const UsuariosModule: React.FC = () => {
         idKey="id"
         onAdd={currentUser?.role === 'Administrador' ? openAddUser : undefined}
         onEdit={currentUser?.role === 'Administrador' ? openEditUser : undefined}
+        onDelete={
+          currentUser?.role === 'Administrador'
+            ? (u) => {
+                if (u.id === currentUser?.id) {
+                  alert('Não é possível excluir a sua própria conta enquanto estiver conectado!');
+                  return;
+                }
+                setUserToDelete(u);
+              }
+            : undefined
+        }
         exportFilename="usuarios_sistema"
         customHeaderActions={
           <button
@@ -431,6 +452,60 @@ export const UsuariosModule: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setUserToDelete(null)}
+              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center font-bold">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Excluir Usuário do Sistema</h3>
+                <p className="text-xs text-slate-500">@{userToDelete.username}</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-xl mb-5 space-y-2">
+              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-semibold">
+                Tem certeza de que deseja excluir o usuário <span className="text-red-600 dark:text-red-400 font-bold">{userToDelete.name}</span>?
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Esta ação revogará permanentemente o acesso deste usuário, apagando suas credenciais de acesso do sistema.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteUser(userToDelete.id);
+                  setUserToDelete(null);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Confirmar Exclusão</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

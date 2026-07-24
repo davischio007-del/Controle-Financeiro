@@ -1014,37 +1014,74 @@ export const useFinancialStore = create<FinancialStore>()(
           passwordHash: hashPassword(userData.passwordHash || 'Mudar123@'),
           createdAt: new Date().toISOString(),
         };
-        set((state) => ({ users: [...state.users, newUser] }));
+        const curUser = get().currentUser;
+        const allUsers = [...(get()._allUsers || get().users), newUser];
+
+        set({
+          _allUsers: allUsers,
+          users: filterByUserScope(allUsers, curUser, 'users'),
+        });
         saveDocToFirestore('users', newUser);
         get().logAudit('usuarios', 'Inclusão', `Usuário ${newUser.username} criado com perfil ${newUser.role}`);
       },
 
       updateUser: (id, updates) => {
-        const oldUser = get().users.find((u) => u.id === id);
+        const allUsers = get()._allUsers || get().users;
+        const oldUser = allUsers.find((u) => u.id === id);
+        if (!oldUser) return;
+
         const updatedPassHash = updates.passwordHash ? hashPassword(updates.passwordHash) : undefined;
-        const updatedUser = oldUser ? { ...oldUser, ...updates, passwordHash: updatedPassHash || oldUser.passwordHash } : null;
-        set((state) => ({
-          users: state.users.map((u) => (u.id === id ? (updatedUser as User) : u)),
-        }));
-        if (updatedUser) saveDocToFirestore('users', updatedUser);
-        get().logAudit('usuarios', 'Alteração', `Usuário ${oldUser?.username} atualizado`, JSON.stringify(oldUser), JSON.stringify(updates));
+        const updatedUser: User = {
+          ...oldUser,
+          ...updates,
+          passwordHash: updatedPassHash || oldUser.passwordHash,
+        };
+
+        const curUser = get().currentUser;
+        const newAllUsers = allUsers.map((u) => (u.id === id ? updatedUser : u));
+        const newCurUser = curUser?.id === id ? updatedUser : curUser;
+
+        set({
+          currentUser: newCurUser,
+          _allUsers: newAllUsers,
+          users: filterByUserScope(newAllUsers, newCurUser, 'users'),
+        });
+        saveDocToFirestore('users', updatedUser);
+        get().logAudit('usuarios', 'Alteração', `Usuário ${oldUser.username} atualizado`, JSON.stringify(oldUser), JSON.stringify(updates));
       },
 
       deleteUser: (id) => {
-        const user = get().users.find((u) => u.id === id);
+        const allUsers = get()._allUsers || get().users;
+        const user = allUsers.find((u) => u.id === id);
         if (!user) return;
+
         deleteDocFromFirestore('users', id);
-        set((state) => ({ users: state.users.filter((u) => u.id !== id) }));
+
+        const curUser = get().currentUser;
+        const newAllUsers = allUsers.filter((u) => u.id !== id);
+
+        set({
+          _allUsers: newAllUsers,
+          users: filterByUserScope(newAllUsers, curUser, 'users'),
+        });
         get().logAudit('usuarios', 'Exclusão', `Usuário ${user.username} excluído definitivamente`);
       },
 
       resetUserPassword: (id, newPass) => {
-        const user = get().users.find((u) => u.id === id);
+        const allUsers = get()._allUsers || get().users;
+        const user = allUsers.find((u) => u.id === id);
         if (!user) return;
+
         const newHash = hashPassword(newPass);
-        set((state) => ({
-          users: state.users.map((u) => (u.id === id ? { ...u, passwordHash: newHash } : u)),
-        }));
+        const updatedUser: User = { ...user, passwordHash: newHash };
+        const curUser = get().currentUser;
+        const newAllUsers = allUsers.map((u) => (u.id === id ? updatedUser : u));
+
+        set({
+          _allUsers: newAllUsers,
+          users: filterByUserScope(newAllUsers, curUser, 'users'),
+        });
+        saveDocToFirestore('users', updatedUser);
         get().logAudit('usuarios', 'Alteração', `Senha do usuário ${user.username} foi resetada pelo Administrador`);
       },
 

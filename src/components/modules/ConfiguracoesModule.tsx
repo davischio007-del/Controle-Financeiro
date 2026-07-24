@@ -52,6 +52,7 @@ interface ConfiguracoesModuleProps {
 
 export const ConfiguracoesModule: React.FC<ConfiguracoesModuleProps> = ({ initialTab = 'geral' }) => {
   const { theme, toggleTheme, currentUser } = useFinancialStore();
+  const isAdmin = currentUser?.role === 'Administrador';
 
   const [activeTab, setActiveTab] = useState<'geral' | 'categorias' | 'ip' | 'dispositivos' | 'seguranca'>(initialTab);
   const [saved, setSaved] = useState(false);
@@ -205,37 +206,63 @@ export const ConfiguracoesModule: React.FC<ConfiguracoesModuleProps> = ({ initia
         >
           <FolderTree className="w-4 h-4" /> Categorias & Subcategorias
         </button>
-        <button
-          onClick={() => setActiveTab('ip')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'ip'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Globe className="w-4 h-4" /> Controle de IP & Redes
-        </button>
-        <button
-          onClick={() => setActiveTab('dispositivos')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'dispositivos'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Laptop className="w-4 h-4" /> Dispositivos & Sessões
-        </button>
-        <button
-          onClick={() => setActiveTab('seguranca')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'seguranca'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <ShieldAlert className="w-4 h-4" /> Segurança & 2FA
-        </button>
+
+        {isAdmin && (
+          <>
+            <button
+              onClick={() => setActiveTab('ip')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'ip'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Globe className="w-4 h-4" /> Controle de IP & Redes
+            </button>
+            <button
+              onClick={() => setActiveTab('dispositivos')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'dispositivos'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Laptop className="w-4 h-4" /> Dispositivos & Sessões
+            </button>
+            <button
+              onClick={() => setActiveTab('seguranca')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeTab === 'seguranca'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <ShieldAlert className="w-4 h-4" /> Segurança & 2FA
+            </button>
+          </>
+        )}
       </div>
+
+      {/* Restricted Access Banner for Non-Admins trying to view Admin Tabs */}
+      {!isAdmin && (activeTab === 'ip' || activeTab === 'dispositivos' || activeTab === 'seguranca') && (
+        <div className="p-8 bg-white dark:bg-slate-900 rounded-2xl border border-amber-200 dark:border-amber-900/50 shadow-sm text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto font-bold">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="max-w-md mx-auto space-y-1">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Acesso Restrito ao Administrador</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              As abas de <strong>Controle de IP & Redes</strong>, <strong>Dispositivos & Sessões</strong> e <strong>Segurança & 2FA</strong> são de acesso exclusivo para usuários com o perfil de <strong>Administrador</strong>.
+            </p>
+          </div>
+          <button
+            onClick={() => setActiveTab('geral')}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all"
+          >
+            Voltar para Configurações Gerais
+          </button>
+        </div>
+      )}
 
       {/* TAB: CATEGORIAS */}
       {activeTab === 'categorias' && (
@@ -326,7 +353,7 @@ export const ConfiguracoesModule: React.FC<ConfiguracoesModuleProps> = ({ initia
       )}
 
       {/* TAB 2: CONTROLE DE IP */}
-      {activeTab === 'ip' && (
+      {activeTab === 'ip' && isAdmin && (
         <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 text-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
             <div>
@@ -439,7 +466,7 @@ export const ConfiguracoesModule: React.FC<ConfiguracoesModuleProps> = ({ initia
       )}
 
       {/* TAB 3: DISPOSITIVOS & SESSÕES */}
-      {activeTab === 'dispositivos' && (
+      {activeTab === 'dispositivos' && isAdmin && (
         <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 text-xs">
           <div>
             <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-sm">
@@ -511,7 +538,7 @@ export const ConfiguracoesModule: React.FC<ConfiguracoesModuleProps> = ({ initia
       )}
 
       {/* TAB 4: SEGURANÇA & 2FA */}
-      {activeTab === 'seguranca' && (
+      {activeTab === 'seguranca' && isAdmin && (
         <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 text-xs">
           <div className="space-y-4">
             <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-sm">
