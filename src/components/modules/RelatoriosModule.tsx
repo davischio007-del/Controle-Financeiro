@@ -14,6 +14,7 @@ import {
 import {
   PeriodFilterState,
   loadSavedPeriodFilter,
+  savePeriodFilter,
   isDateInRange,
 } from '../../lib/periodFilter';
 import { PeriodFilterBar } from '../common/PeriodFilterBar';
@@ -119,23 +120,40 @@ export const RelatoriosModule: React.FC = () => {
   // Print Preview Modal State
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  // Competence Month State
-  const now = new Date();
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  // Period & Competence State
+  // Derive active competence month & year reactively from periodState
+  const { selectedMonth, selectedYear } = useMemo(() => {
+    if (periodState.startDate) {
+      const parts = periodState.startDate.split('-');
+      if (parts.length >= 2) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(y) && !isNaN(m) && m >= 1 && m <= 12) {
+          return { selectedMonth: m, selectedYear: y };
+        }
+      }
+    }
+    const now = new Date();
+    return { selectedMonth: now.getMonth() + 1, selectedYear: now.getFullYear() };
+  }, [periodState.startDate]);
 
   const handleMonthCompetenceChange = (m: number, y: number) => {
-    setSelectedMonth(m);
-    setSelectedYear(y);
     const lastDay = new Date(y, m, 0).getDate();
     const startStr = `${y}-${String(m).padStart(2, '0')}-01`;
     const endStr = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    setPeriodState((prev) => ({
-      ...prev,
+    const newPeriod: PeriodFilterState = {
       startDate: startStr,
       endDate: endStr,
-      quickRange: 'custom',
-    }));
+      preset: 'personalizado',
+    };
+    setPeriodState(newPeriod);
+    savePeriodFilter(newPeriod);
+    setCurrentPage(1);
+  };
+
+  const handlePeriodFilterChange = (newState: PeriodFilterState) => {
+    setPeriodState(newState);
+    savePeriodFilter(newState);
     setCurrentPage(1);
   };
 
@@ -177,7 +195,7 @@ export const RelatoriosModule: React.FC = () => {
     });
   }, [variableExpenses, periodState]);
 
-  // Card Invoices Total for the Selected Competence Month
+  // Card Invoices Total for the Selected Period / Competence Range
   const cardInvoicesSummary = useMemo(() => {
     const cardList: Array<{
       cardId: string;
@@ -186,10 +204,20 @@ export const RelatoriosModule: React.FC = () => {
       itemsCount: number;
     }> = [];
 
+    const startYearMonth = periodState.startDate ? periodState.startDate.substring(0, 7) : `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+    const endYearMonth = periodState.endDate ? periodState.endDate.substring(0, 7) : `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+
+    const [sy, sm] = startYearMonth.split('-').map(Number);
+    const [ey, em] = endYearMonth.split('-').map(Number);
+    const monthsCount = Math.max(1, (ey - sy) * 12 + (em - sm) + 1);
+
     cards.filter((c) => !c.archived).forEach((card) => {
-      const cardVariablePurchases = variableExpenses.filter(
-        (v) => !v.archived && (v.cardId === card.id || (v.paymentMethod === 'Cartão' && v.cardId === card.id))
-      );
+      const cardVariablePurchases = variableExpenses.filter((v) => {
+        if (v.archived) return false;
+        if (v.cardId) return v.cardId === card.id;
+        if (v.paymentMethod === 'Cartão') return card.id === cards[0]?.id;
+        return false;
+      });
 
       let cardTotalMonth = 0;
       let count = 0;
@@ -199,7 +227,8 @@ export const RelatoriosModule: React.FC = () => {
         const amounts = calculateInstallmentAmounts(v.amount, N);
         for (let k = 1; k <= N; k++) {
           const comp = getInstallmentCompetence(v.date, card.closingDay || 10, k);
-          if (comp.month === selectedMonth && comp.year === selectedYear) {
+          const compYearMonth = `${comp.year}-${String(comp.month).padStart(2, '0')}`;
+          if (compYearMonth >= startYearMonth && compYearMonth <= endYearMonth) {
             cardTotalMonth += amounts[k - 1];
             count++;
           }
@@ -208,8 +237,8 @@ export const RelatoriosModule: React.FC = () => {
 
       // Fixed expenses attached to this card
       fixedExpenses.filter((f) => !f.archived && f.cardId === card.id).forEach((f) => {
-        cardTotalMonth += f.amount;
-        count++;
+        cardTotalMonth += f.amount * monthsCount;
+        count += monthsCount;
       });
 
       if (cardTotalMonth > 0) {
@@ -224,11 +253,10 @@ export const RelatoriosModule: React.FC = () => {
 
     const total = cardList.reduce((acc, c) => acc + c.amount, 0);
     return { list: cardList, total };
-  }, [cards, variableExpenses, fixedExpenses, selectedMonth, selectedYear]);
+  }, [cards, variableExpenses, fixedExpenses, periodState.startDate, periodState.endDate, selectedMonth, selectedYear]);
 
-  // Loan Installments for the Selected Competence Month
+  // Loan Installments for the Selected Period
   const loansSummary = useMemo(() => {
-    const yearMonthStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
     const loanItems: Array<{
       loanId: string;
       description: string;
@@ -252,7 +280,7 @@ export const RelatoriosModule: React.FC = () => {
           : calculatePRICESchedule(l.contractedAmount, l.interestRateMonthly, l.installmentsTotal, l.contractDate || getCurrentDateFormatted(), l.iofAmount || 0, l.insuranceAmount || 0, l.feesAmount || 0, l.firstDueDate);
 
       schedule.forEach((inst) => {
-        if (inst.dueDate?.startsWith(yearMonthStr)) {
+        if (inst.dueDate && isDateInRange(inst.dueDate, periodState.startDate, periodState.endDate)) {
           loanItems.push({
             loanId: l.id,
             description: `Parcela ${inst.number}/${l.installmentsTotal} - ${l.type} ${l.contractNumber ? `(#${l.contractNumber})` : ''}`,
@@ -271,7 +299,7 @@ export const RelatoriosModule: React.FC = () => {
 
     const total = loanItems.reduce((acc, i) => acc + i.amount, 0);
     return { list: loanItems, total };
-  }, [loans, banks, selectedMonth, selectedYear]);
+  }, [loans, banks, periodState.startDate, periodState.endDate]);
 
   // Combined Consolidated Transactions Array
   const consolidatedTransactions = useMemo(() => {
@@ -780,10 +808,7 @@ export const RelatoriosModule: React.FC = () => {
         {/* Global Period Filter Bar Component */}
         <PeriodFilterBar
           filterState={periodState}
-          onChange={(newSt) => {
-            setPeriodState(newSt);
-            setCurrentPage(1);
-          }}
+          onChange={handlePeriodFilterChange}
           showGranularity={reportTab === 'fluxo'}
           granularity={granularity}
           onGranularityChange={(g) => setGranularity(g)}
