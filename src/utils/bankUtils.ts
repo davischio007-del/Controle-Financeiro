@@ -1,4 +1,5 @@
-import { Bank, Income, FixedExpense, VariableExpense, Transfer, Loan, Investment, Category, Subcategory } from '../types';
+import { Bank, Card, CardInvoice, Income, FixedExpense, VariableExpense, Transfer, Loan, Investment, Category, Subcategory } from '../types';
+import { getInstallmentCompetence, getInvoiceCompetence, calculateInstallmentAmounts } from '../lib/utils';
 
 export interface BankMovement {
   id: string;
@@ -13,6 +14,8 @@ export interface BankMovement {
 
 export interface BankStoreState {
   banks: Bank[];
+  cards?: Card[];
+  cardInvoices?: CardInvoice[];
   incomes: Income[];
   fixedExpenses: FixedExpense[];
   variableExpenses: VariableExpense[];
@@ -173,3 +176,85 @@ export function recalculateAllBankBalances(state: BankStoreState): Bank[] {
     };
   });
 }
+
+/**
+ * Calculates used limit and available limit for a credit card based on active unpaid purchases.
+ */
+export function calculateCardLimits(
+  card: Card,
+  state: Partial<BankStoreState>
+): { limitUsed: number; limitAvailable: number } {
+  const variableExpenses = state.variableExpenses || [];
+  const fixedExpenses = state.fixedExpenses || [];
+  const cardInvoices = state.cardInvoices || [];
+
+  const cardVariablePurchases = variableExpenses.filter(
+    (v) => v.cardId === card.id || (v.paymentMethod === 'Cartão' && v.cardId === card.id)
+  );
+
+  const cardFixedPurchases = fixedExpenses.filter(
+    (f) => f.cardId === card.id || (f.paymentMethod === 'Cartão' && f.cardId === card.id)
+  );
+
+  let totalUsed = 0;
+
+  // 1. Variable & Installment Purchases
+  cardVariablePurchases.forEach((v) => {
+    const N = v.installmentsCount && v.installmentsCount > 0 ? v.installmentsCount : 1;
+    const amounts = calculateInstallmentAmounts(v.amount, N);
+
+    for (let k = 1; k <= N; k++) {
+      const comp = getInstallmentCompetence(v.date, card.closingDay || 10, k);
+      const isPaid = cardInvoices.some(
+        (ci) =>
+          ci.cardId === card.id &&
+          Number(ci.month) === comp.month &&
+          Number(ci.year) === comp.year &&
+          ci.status === 'Paga'
+      );
+
+      if (!isPaid) {
+        totalUsed += amounts[k - 1];
+      }
+    }
+  });
+
+  // 2. Fixed Expenses assigned to card
+  cardFixedPurchases.forEach((f) => {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(f.dueDay || 10).padStart(2, '0')}`;
+    const comp = getInvoiceCompetence(dateStr, card.closingDay || 10);
+    const isPaid = cardInvoices.some(
+      (ci) =>
+        ci.cardId === card.id &&
+        Number(ci.month) === comp.month &&
+        Number(ci.year) === comp.year &&
+        ci.status === 'Paga'
+    );
+
+    if (!isPaid) {
+      totalUsed += f.amount;
+    }
+  });
+
+  const limitTotal = Number(card.limitTotal) || 0;
+  const limitUsed = Math.min(limitTotal, Math.max(0, Math.round(totalUsed * 100) / 100));
+  const limitAvailable = Math.max(0, Math.round((limitTotal - limitUsed) * 100) / 100);
+
+  return { limitUsed, limitAvailable };
+}
+
+/**
+ * Returns updated list of cards with recalculated limits based on unpaid purchases.
+ */
+export function recalculateAllCardLimits(state: Partial<BankStoreState>): Card[] {
+  return (state.cards || []).map((card) => {
+    const { limitUsed, limitAvailable } = calculateCardLimits(card, state);
+    return {
+      ...card,
+      limitUsed,
+      limitAvailable,
+    };
+  });
+}
+

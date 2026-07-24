@@ -4,7 +4,8 @@ import { FixedExpense, PaymentMethod, Periodicity, ExpenseStatus } from '../../t
 import { DataTable, Column } from '../common/DataTable';
 import { formatCurrency } from '../../lib/utils';
 import { SmartDeleteModal } from '../common/SmartDeleteModal';
-import { Plus, X, Calendar, CreditCard, Landmark, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { MonthCompetenceBar } from '../common/MonthCompetenceBar';
+import { Plus, X, Calendar, CreditCard, Landmark, CheckCircle, Clock, AlertCircle, Info } from 'lucide-react';
 
 export const ContasFixasModule: React.FC = () => {
   const {
@@ -17,6 +18,10 @@ export const ContasFixasModule: React.FC = () => {
     updateFixedExpense,
     deleteFixedExpense,
   } = useFinancialStore();
+
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FixedExpense | null>(null);
@@ -193,9 +198,19 @@ export const ContasFixasModule: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <MonthCompetenceBar
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+        onChangeMonth={(m, y) => {
+          setSelectedMonth(m);
+          setSelectedYear(y);
+        }}
+        title="Contas Fixas - Mês de Competência"
+      />
+
       <DataTable
         title="Contas Fixas & Recorrentes"
-        subtitle="Aluguel, luz, internet, planos de saúde e assinaturas automatizadas"
+        subtitle={`Competência ${String(selectedMonth).padStart(2, '0')}/${selectedYear} (Lançamentos com cartão consolidam na fatura)`}
         columns={columns}
         data={fixedExpenses}
         idKey="id"

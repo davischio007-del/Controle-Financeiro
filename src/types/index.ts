@@ -182,6 +182,7 @@ export interface VariableExpense {
   currentInstallment?: number;
   installmentAmount?: number;
   notes?: string;
+  source?: 'contas_variaveis' | 'cartoes' | string;
 }
 
 export type LoanType = 'CDC' | 'Consignado' | 'Financiamento' | 'Crédito Pessoal' | 'Capital de Giro' | 'Outros';

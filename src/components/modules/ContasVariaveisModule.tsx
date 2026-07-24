@@ -4,7 +4,8 @@ import { VariableExpense, PaymentMethod, ExpenseStatus } from '../../types';
 import { DataTable, Column } from '../common/DataTable';
 import { formatCurrency, formatDate, getCurrentDateFormatted } from '../../lib/utils';
 import { SmartDeleteModal } from '../common/SmartDeleteModal';
-import { Plus, X, ShoppingBag, CreditCard, Landmark, CheckCircle, Clock } from 'lucide-react';
+import { MonthCompetenceBar } from '../common/MonthCompetenceBar';
+import { Plus, X, ShoppingBag, CreditCard, Landmark, CheckCircle, Clock, Filter } from 'lucide-react';
 
 export const ContasVariaveisModule: React.FC = () => {
   const {
@@ -17,6 +18,11 @@ export const ContasVariaveisModule: React.FC = () => {
     updateVariableExpense,
     deleteVariableExpense,
   } = useFinancialStore();
+
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [filterByMonthOnly, setFilterByMonthOnly] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<VariableExpense | null>(null);
@@ -72,6 +78,7 @@ export const ContasVariaveisModule: React.FC = () => {
       bankId: item.bankId,
       cardId: item.cardId,
       status: item.status,
+      source: 'contas_variaveis',
     });
   };
 
@@ -88,6 +95,7 @@ export const ContasVariaveisModule: React.FC = () => {
         bankId: paymentMethod === 'Cartão' ? undefined : bankId,
         cardId: paymentMethod === 'Cartão' ? cardId : undefined,
         status,
+        source: 'contas_variaveis',
       });
     } else {
       addVariableExpense({
@@ -100,6 +108,7 @@ export const ContasVariaveisModule: React.FC = () => {
         bankId: paymentMethod === 'Cartão' ? undefined : bankId,
         cardId: paymentMethod === 'Cartão' ? cardId : undefined,
         status,
+        source: 'contas_variaveis',
       });
     }
     setIsModalOpen(false);
@@ -180,13 +189,66 @@ export const ContasVariaveisModule: React.FC = () => {
     },
   ];
 
+  const targetYearMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+  const visibleExpenses = variableExpenses.filter((v) => {
+    // Exclude automatic invoice payment records generated when paying card bills
+    if (
+      v.source === 'fatura_cartao' ||
+      v.notes?.includes('[INVOICE_PAYMENT') ||
+      v.description?.startsWith('Pagamento Fatura') ||
+      v.description?.startsWith('Complemento Fatura')
+    ) {
+      return false;
+    }
+    // Exclude purchases launched directly in Cartões module
+    if (v.source === 'cartoes') {
+      return false;
+    }
+    // Exclude card purchases if not explicitly launched in Contas Variáveis
+    if (v.cardId && v.source !== 'contas_variaveis') {
+      return false;
+    }
+    // Competence Month Filter
+    if (filterByMonthOnly && v.date && !v.date.startsWith(targetYearMonth)) {
+      return false;
+    }
+    return true;
+  });
+
   return (
     <div className="space-y-6">
+      <MonthCompetenceBar
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+        onChangeMonth={(m, y) => {
+          setSelectedMonth(m);
+          setSelectedYear(y);
+        }}
+        title="Contas Variáveis - Mês de Competência"
+        extraControls={
+          <button
+            onClick={() => setFilterByMonthOnly(!filterByMonthOnly)}
+            className={`text-xs font-bold px-3 py-2 rounded-xl transition-colors border flex items-center gap-1.5 ${
+              filterByMonthOnly
+                ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+                : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            {filterByMonthOnly ? 'Filtrado por Mês' : 'Exibindo Todos'}
+          </button>
+        }
+      />
+
       <DataTable
         title="Contas Variáveis & Gastos Diários"
-        subtitle="Supermercado, restaurantes, combustível, farmácia e compras avulsas"
+        subtitle={
+          filterByMonthOnly
+            ? `Exibindo lançamentos de ${String(selectedMonth).padStart(2, '0')}/${selectedYear}`
+            : 'Supermercado, restaurantes, combustível, farmácia e compras avulsas'
+        }
         columns={columns}
-        data={variableExpenses}
+        data={visibleExpenses}
         idKey="id"
         onAdd={openAddModal}
         onEdit={openEditModal}

@@ -36,7 +36,7 @@ import {
   getInvoiceCompetence,
   getInstallmentCompetence,
 } from '../lib/utils';
-import { recalculateAllBankBalances } from '../utils/bankUtils';
+import { recalculateAllBankBalances, recalculateAllCardLimits } from '../utils/bankUtils';
 
 // Helper full permissions object
 export const FULL_MODULE_PERMISSIONS = {
@@ -308,222 +308,33 @@ const INITIAL_SUBCATEGORIES: Subcategory[] = [
   { id: 'sub_dividendos', categoryId: 'cat_receitas', name: 'Dividendos & JCP', archived: false },
 ];
 
-// Seed Incomes
-const INITIAL_INCOMES: Income[] = [
-  {
-    id: 'inc_salario_julho',
-    description: 'Salário Mensal Executivo',
-    categoryId: 'cat_receitas',
-    subcategoryId: 'sub_salario',
-    bankId: 'bank_itau',
-    amount: 18500.00,
-    date: '2026-07-05',
-    isRecurring: true,
-    notes: 'Pagamento referente ao mês de Julho',
-    archived: false,
-    createdAt: '2026-07-05T09:00:00.000Z',
-    createdBy: 'davischio',
-  },
-  {
-    id: 'inc_freelance_julho',
-    description: 'Consultoria de Arquitetura de Software',
-    categoryId: 'cat_receitas',
-    subcategoryId: 'sub_freelance',
-    bankId: 'bank_nubank',
-    amount: 4200.00,
-    date: '2026-07-15',
-    isRecurring: false,
-    notes: 'Projeto de consultoria para cliente internacional',
-    archived: false,
-    createdAt: '2026-07-15T14:30:00.000Z',
-    createdBy: 'davischio',
-  },
-];
+export const SEEDED_EXPENSE_AND_INCOME_IDS = new Set([
+  'inc_salario_julho',
+  'inc_freelance_julho',
+  'fix_aluguel',
+  'fix_plano_saude',
+  'fix_internet',
+  'var_mercado_semana1',
+  'var_apple_store',
+  'var_supermercado_pao_acucar',
+  'var_restaurante_outback',
+  'var_posto_gasolina',
+  'var_farmacia_drogasil',
+  'var_combustivel_posto',
+  'var_passagem_aerea_latam',
+  'var_hotel_pousada',
+  'var_vestuario_zara',
+  'var_uber_viagens',
+]);
 
-// Seed Fixed Expenses
-const INITIAL_FIXED_EXPENSES: FixedExpense[] = [
-  {
-    id: 'fix_aluguel',
-    description: 'Aluguel do Apartamento Residencial',
-    categoryId: 'cat_moradia',
-    subcategoryId: 'sub_aluguel',
-    amount: 3800.00,
-    dueDay: 10,
-    periodicity: 'Mensal',
-    paymentMethod: 'Pix',
-    bankId: 'bank_itau',
-    status: 'Pago',
-    archived: false,
-    lastPaidDate: '2026-07-09',
-  },
-  {
-    id: 'fix_plano_saude',
-    description: 'Plano de Saúde Unimed Executivo',
-    categoryId: 'cat_saude',
-    subcategoryId: 'sub_plano_saude',
-    amount: 1250.00,
-    dueDay: 15,
-    periodicity: 'Mensal',
-    paymentMethod: 'Cartão',
-    cardId: 'card_itau_personnalite',
-    status: 'Pago',
-    archived: false,
-    lastPaidDate: '2026-07-14',
-  },
-  {
-    id: 'fix_internet',
-    description: 'Internet Fibra Óptica 600 Mega',
-    categoryId: 'cat_moradia',
-    subcategoryId: 'sub_internet',
-    amount: 180.00,
-    dueDay: 5,
-    periodicity: 'Mensal',
-    paymentMethod: 'Cartão',
-    cardId: 'card_nubank_uv',
-    status: 'Pago',
-    archived: false,
-    lastPaidDate: '2026-07-04',
-  },
-];
+// Seed Incomes (Empty by default)
+const INITIAL_INCOMES: Income[] = [];
 
-// Seed Variable Expenses
-const INITIAL_VARIABLE_EXPENSES: VariableExpense[] = [
-  {
-    id: 'var_mercado_semana1',
-    description: 'Compras Quinzenais Carrefour',
-    categoryId: 'cat_mercado',
-    subcategoryId: 'sub_supermercado',
-    amount: 1450.00,
-    date: '2026-07-10',
-    paymentMethod: 'Cartão',
-    cardId: 'card_nubank_uv',
-    status: 'Pago',
-    archived: false,
-  },
-  {
-    id: 'var_apple_store',
-    description: 'Assinatura Apple Services & iCloud',
-    categoryId: 'cat_outros',
-    subcategoryId: 'sub_internet',
-    amount: 350.00,
-    date: '2026-07-12',
-    paymentMethod: 'Cartão',
-    cardId: 'card_nubank_uv',
-    status: 'Pago',
-    archived: false,
-  },
-  {
-    id: 'var_supermercado_pao_acucar',
-    description: 'Hortifruti & Orgânicos Pão de Açúcar',
-    categoryId: 'cat_mercado',
-    subcategoryId: 'sub_supermercado',
-    amount: 860.00,
-    date: '2026-07-14',
-    paymentMethod: 'Cartão',
-    cardId: 'card_nubank_uv',
-    status: 'Pago',
-    archived: false,
-  },
-  {
-    id: 'var_restaurante_outback',
-    description: 'Jantar Executivo Outback Steakhouse',
-    categoryId: 'cat_mercado',
-    subcategoryId: 'sub_restaurante',
-    amount: 420.00,
-    date: '2026-07-15',
-    paymentMethod: 'Cartão',
-    cardId: 'card_nubank_uv',
-    status: 'Pago',
-    archived: false,
-  },
-  {
-    id: 'var_posto_gasolina',
-    description: 'Abastecimento Ipiranga Grid',
-    categoryId: 'cat_transporte',
-    subcategoryId: 'sub_combustivel',
-    amount: 280.00,
-    date: '2026-07-16',
-    paymentMethod: 'Cartão',
-    cardId: 'card_nubank_uv',
-    status: 'Pago',
-    archived: false,
-  },
-  {
-    id: 'var_farmacia_drogasil',
-    description: 'Medicamentos & Cuidados Drogasil',
-    categoryId: 'cat_saude',
-    subcategoryId: 'sub_farmacia',
-    amount: 300.00,
-    date: '2026-07-17',
-    paymentMethod: 'Cartão',
-    cardId: 'card_nubank_uv',
-    status: 'Pago',
-    archived: false,
-  },
-  {
-    id: 'var_combustivel_posto',
-    description: 'Abastecimento Posto Shell V-Power',
-    categoryId: 'cat_transporte',
-    subcategoryId: 'sub_combustivel',
-    amount: 320.00,
-    date: '2026-07-18',
-    paymentMethod: 'Cartão',
-    cardId: 'card_itau_personnalite',
-    status: 'Pago',
-    archived: false,
-  },
-  {
-    id: 'var_passagem_aerea_latam',
-    description: 'Passagens Aéreas Latam Brasil',
-    categoryId: 'cat_lazer',
-    subcategoryId: 'sub_freelance',
-    amount: 1850.00,
-    date: '2026-07-08',
-    paymentMethod: 'Cartão',
-    cardId: 'card_itau_personnalite',
-    status: 'Pago',
-    archived: false,
-    installmentsCount: 3,
-    currentInstallment: 1,
-    installmentAmount: 616.66,
-  },
-  {
-    id: 'var_hotel_pousada',
-    description: 'Reserva Hospedagem Booking.com',
-    categoryId: 'cat_lazer',
-    subcategoryId: 'sub_freelance',
-    amount: 920.00,
-    date: '2026-07-11',
-    paymentMethod: 'Cartão',
-    cardId: 'card_itau_personnalite',
-    status: 'Pago',
-    archived: false,
-  },
-  {
-    id: 'var_vestuario_zara',
-    description: 'Roupas & Acessórios Zara Shopping',
-    categoryId: 'cat_outros',
-    subcategoryId: 'sub_freelance',
-    amount: 480.00,
-    date: '2026-07-13',
-    paymentMethod: 'Cartão',
-    cardId: 'card_itau_personnalite',
-    status: 'Pago',
-    archived: false,
-  },
-  {
-    id: 'var_uber_viagens',
-    description: 'Corridas Executivas Uber',
-    categoryId: 'cat_transporte',
-    subcategoryId: 'sub_combustivel',
-    amount: 300.00,
-    date: '2026-07-19',
-    paymentMethod: 'Cartão',
-    cardId: 'card_itau_personnalite',
-    status: 'Pago',
-    archived: false,
-  },
-];
+// Seed Fixed Expenses (Empty by default)
+const INITIAL_FIXED_EXPENSES: FixedExpense[] = [];
+
+// Seed Variable Expenses (Empty by default)
+const INITIAL_VARIABLE_EXPENSES: VariableExpense[] = [];
 
 // Seed Loans (PRICE and SAC)
 const PRICE_INST = calculatePRICESchedule(30000, 1.4, 48, '2025-06-01', 0, 0);
@@ -905,12 +716,15 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       setCollectionData: (key, items) => {
+        const filteredItems = Array.isArray(items)
+          ? items.filter((item) => !item.id || !SEEDED_EXPENSE_AND_INCOME_IDS.has(item.id))
+          : items;
         set((state) => {
           const masterKey = `_all${key.charAt(0).toUpperCase()}${key.slice(1)}`;
           const newState: any = {
-            [masterKey]: items,
+            [masterKey]: filteredItems,
           };
-          newState[key] = filterByUserScope(items, state.currentUser, key);
+          newState[key] = filterByUserScope(filteredItems, state.currentUser, key);
           return newState;
         });
         get().recalculateBankBalances();
@@ -1089,17 +903,26 @@ export const useFinancialStore = create<FinancialStore>()(
       recalculateBankBalances: () => {
         const state = get();
         const updatedBanks = recalculateAllBankBalances(state);
+        const updatedCards = recalculateAllCardLimits(state);
         const curUser = state.currentUser;
+
         const allBanks = state._allBanks
           ? state._allBanks.map((b) => updatedBanks.find((ub) => ub.id === b.id) || b)
           : updatedBanks;
 
+        const allCards = state._allCards
+          ? state._allCards.map((c) => updatedCards.find((uc) => uc.id === c.id) || c)
+          : updatedCards;
+
         set({
           _allBanks: allBanks,
           banks: filterByUserScope(allBanks, curUser, 'banks'),
+          _allCards: allCards,
+          cards: filterByUserScope(allCards, curUser, 'cards'),
         });
 
         updatedBanks.forEach((b) => saveDocToFirestore('banks', b));
+        updatedCards.forEach((c) => saveDocToFirestore('cards', c));
       },
 
       addBank: (bankData) => {
@@ -1182,6 +1005,7 @@ export const useFinancialStore = create<FinancialStore>()(
           cards: filterByUserScope(allCards, curUser, 'cards'),
         });
         saveDocToFirestore('cards', newCard);
+        get().recalculateBankBalances();
         get().logAudit('cartoes', 'Inclusão', `Cartão ${newCard.name} cadastrado com limite de R$ ${newCard.limitTotal}`);
       },
 
@@ -1197,6 +1021,7 @@ export const useFinancialStore = create<FinancialStore>()(
           cards: state.cards.map((c) => (c.id === id ? updatedCard : c)),
         }));
         saveDocToFirestore('cards', updatedCard);
+        get().recalculateBankBalances();
         get().logAudit('cartoes', 'Alteração', `Cartão ID ${id} atualizado`);
       },
 
@@ -1218,6 +1043,7 @@ export const useFinancialStore = create<FinancialStore>()(
           }));
           get().logAudit('cartoes', 'Exclusão', `Cartão ${card.name} excluído definitivamente`);
         }
+        get().recalculateBankBalances();
         return true;
       },
 
@@ -1288,6 +1114,7 @@ export const useFinancialStore = create<FinancialStore>()(
             paymentMethod: 'Débito',
             bankId: fromBankId,
             status: 'Pago',
+            source: 'fatura_cartao',
             notes: `[INVOICE_PAYMENT:${cardId}_${year}_${monthStr}] Complemento de pagamento da fatura ${monthStr}/${year} por novos lançamentos`,
           });
 
@@ -1358,6 +1185,7 @@ export const useFinancialStore = create<FinancialStore>()(
           paymentMethod: 'Débito',
           bankId: fromBankId,
           status: 'Pago',
+          source: 'fatura_cartao',
           notes: `[INVOICE_PAYMENT:${cardId}_${year}_${monthStr}] Pagamento total da fatura ${monthStr}/${year} do cartão ${card.name}`,
         });
 
@@ -3090,26 +2918,26 @@ export const useFinancialStore = create<FinancialStore>()(
       onRehydrateStorage: () => (state) => {
         if (!state) return;
 
-        // Ensure all initial seed variable expenses exist if missing in local storage
+        // Purge system seed/sample entries so only user-created entries remain
         if (state.variableExpenses) {
-          const existingVarIds = new Set(state.variableExpenses.map((v) => v.id));
-          const missingVar = INITIAL_VARIABLE_EXPENSES.filter((v) => !existingVarIds.has(v.id));
-          if (missingVar.length > 0) {
-            state.variableExpenses = [...state.variableExpenses, ...missingVar];
-          }
-        } else {
-          state.variableExpenses = INITIAL_VARIABLE_EXPENSES;
+          state.variableExpenses = state.variableExpenses.filter((v) => !SEEDED_EXPENSE_AND_INCOME_IDS.has(v.id));
+        }
+        if (state._allVariableExpenses) {
+          state._allVariableExpenses = state._allVariableExpenses.filter((v) => !SEEDED_EXPENSE_AND_INCOME_IDS.has(v.id));
         }
 
-        // Ensure all initial seed fixed expenses exist if missing in local storage
         if (state.fixedExpenses) {
-          const existingFixIds = new Set(state.fixedExpenses.map((f) => f.id));
-          const missingFix = INITIAL_FIXED_EXPENSES.filter((f) => !existingFixIds.has(f.id));
-          if (missingFix.length > 0) {
-            state.fixedExpenses = [...state.fixedExpenses, ...missingFix];
-          }
-        } else {
-          state.fixedExpenses = INITIAL_FIXED_EXPENSES;
+          state.fixedExpenses = state.fixedExpenses.filter((f) => !SEEDED_EXPENSE_AND_INCOME_IDS.has(f.id));
+        }
+        if (state._allFixedExpenses) {
+          state._allFixedExpenses = state._allFixedExpenses.filter((f) => !SEEDED_EXPENSE_AND_INCOME_IDS.has(f.id));
+        }
+
+        if (state.incomes) {
+          state.incomes = state.incomes.filter((i) => !SEEDED_EXPENSE_AND_INCOME_IDS.has(i.id));
+        }
+        if (state._allIncomes) {
+          state._allIncomes = state._allIncomes.filter((i) => !SEEDED_EXPENSE_AND_INCOME_IDS.has(i.id));
         }
 
         state.recalculateBankBalances();

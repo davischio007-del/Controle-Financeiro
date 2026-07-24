@@ -327,6 +327,7 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
         currentInstallment: 1,
         installmentAmount: instAmounts[0],
         notes: pNotes || undefined,
+        source: 'cartoes',
       });
     } else {
       addVariableExpense({
@@ -342,6 +343,7 @@ export const CartoesModule: React.FC<CartoesModuleProps> = ({ selectedCardIdForI
         currentInstallment: 1,
         installmentAmount: instAmounts[0],
         notes: pNotes || undefined,
+        source: 'cartoes',
       });
     }
 

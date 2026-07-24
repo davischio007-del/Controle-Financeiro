@@ -4,7 +4,8 @@ import { Income } from '../../types';
 import { DataTable, Column } from '../common/DataTable';
 import { formatCurrency, formatDate, getCurrentDateFormatted } from '../../lib/utils';
 import { SmartDeleteModal } from '../common/SmartDeleteModal';
-import { Plus, TrendingUp, X, Paperclip, Check } from 'lucide-react';
+import { MonthCompetenceBar } from '../common/MonthCompetenceBar';
+import { Plus, TrendingUp, X, Paperclip, Check, Filter } from 'lucide-react';
 
 export const ReceitasModule: React.FC = () => {
   const {
@@ -16,6 +17,11 @@ export const ReceitasModule: React.FC = () => {
     updateIncome,
     deleteIncome,
   } = useFinancialStore();
+
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [filterByMonthOnly, setFilterByMonthOnly] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Income | null>(null);
@@ -153,13 +159,46 @@ export const ReceitasModule: React.FC = () => {
     },
   ];
 
+  const targetYearMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+  const visibleIncomes = incomes.filter((inc) => {
+    if (!filterByMonthOnly) return true;
+    return inc.date?.startsWith(targetYearMonth) || inc.isRecurring;
+  });
+
   return (
     <div className="space-y-6">
+      <MonthCompetenceBar
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+        onChangeMonth={(m, y) => {
+          setSelectedMonth(m);
+          setSelectedYear(y);
+        }}
+        title="Receitas - Mês de Competência"
+        extraControls={
+          <button
+            onClick={() => setFilterByMonthOnly(!filterByMonthOnly)}
+            className={`text-xs font-bold px-3 py-2 rounded-xl transition-colors border flex items-center gap-1.5 ${
+              filterByMonthOnly
+                ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+                : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            {filterByMonthOnly ? 'Filtrado por Mês' : 'Exibindo Todos'}
+          </button>
+        }
+      />
+
       <DataTable
         title="Lançamento de Receitas"
-        subtitle="Gerencie salários, serviços freelance, dividendos e entradas financeiras"
+        subtitle={
+          filterByMonthOnly
+            ? `Exibindo receitas do mês ${String(selectedMonth).padStart(2, '0')}/${selectedYear}`
+            : 'Gerencie salários, serviços freelance, dividendos e entradas financeiras'
+        }
         columns={columns}
-        data={incomes}
+        data={visibleIncomes}
         idKey="id"
         onAdd={openAddModal}
         onEdit={openEditModal}

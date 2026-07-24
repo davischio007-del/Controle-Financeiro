@@ -1,12 +1,23 @@
 import React, { useState, useMemo } from 'react';
 import { useFinancialStore } from '../../services/storage';
-import { formatCurrency, formatDate, exportToPDF, exportToExcel } from '../../lib/utils';
+import {
+  formatCurrency,
+  formatDate,
+  exportToPDF,
+  exportToExcel,
+  getInstallmentCompetence,
+  calculatePRICESchedule,
+  calculateSACSchedule,
+  calculateInstallmentAmounts,
+  getCurrentDateFormatted,
+} from '../../lib/utils';
 import {
   PeriodFilterState,
   loadSavedPeriodFilter,
   isDateInRange,
 } from '../../lib/periodFilter';
 import { PeriodFilterBar } from '../common/PeriodFilterBar';
+import { MonthCompetenceBar } from '../common/MonthCompetenceBar';
 import {
   FileText,
   Download,
@@ -108,18 +119,40 @@ export const RelatoriosModule: React.FC = () => {
   // Print Preview Modal State
   const [showPrintModal, setShowPrintModal] = useState(false);
 
+  // Competence Month State
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+
+  const handleMonthCompetenceChange = (m: number, y: number) => {
+    setSelectedMonth(m);
+    setSelectedYear(y);
+    const lastDay = new Date(y, m, 0).getDate();
+    const startStr = `${y}-${String(m).padStart(2, '0')}-01`;
+    const endStr = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    setPeriodState((prev) => ({
+      ...prev,
+      startDate: startStr,
+      endDate: endStr,
+      quickRange: 'custom',
+    }));
+    setCurrentPage(1);
+  };
+
   // Emission Timestamp & Document Reference
   const emissionTimestamp = useMemo(() => new Date().toLocaleString('pt-BR'), []);
   const docRefNumber = useMemo(() => `REL-${Math.floor(100000 + Math.random() * 900000)}`, []);
 
-  // Filtered Raw Datasets by Period & Non-Archived
+  // Filtered Incomes
   const filteredIncomes = useMemo(() => {
     return incomes.filter((inc) => !inc.archived && isDateInRange(inc.date, periodState.startDate, periodState.endDate));
   }, [incomes, periodState]);
 
-  const filteredFixed = useMemo(() => {
+  // Filtered Non-card Fixed Expenses (Excludes card payments to prevent double counting)
+  const filteredFixedNonCard = useMemo(() => {
     return fixedExpenses.filter((f) => {
       if (f.archived) return false;
+      if (f.paymentMethod === 'Cartão' || Boolean(f.cardId)) return false;
       const yearMonth = periodState.startDate.substring(0, 7);
       const dayStr = String(f.dueDay || 1).padStart(2, '0');
       const simDate = `${yearMonth}-${dayStr}`;
@@ -127,9 +160,118 @@ export const RelatoriosModule: React.FC = () => {
     });
   }, [fixedExpenses, periodState]);
 
-  const filteredVariable = useMemo(() => {
-    return variableExpenses.filter((v) => !v.archived && isDateInRange(v.date, periodState.startDate, periodState.endDate));
+  // Filtered Non-card Variable Expenses (Excludes card purchases to prevent double counting)
+  const filteredVariableNonCard = useMemo(() => {
+    return variableExpenses.filter((v) => {
+      if (v.archived) return false;
+      if (v.paymentMethod === 'Cartão' || Boolean(v.cardId)) return false;
+      if (
+        v.source === 'fatura_cartao' ||
+        v.notes?.includes('[INVOICE_PAYMENT') ||
+        v.description?.startsWith('Pagamento Fatura') ||
+        v.description?.startsWith('Complemento Fatura')
+      ) {
+        return false;
+      }
+      return isDateInRange(v.date, periodState.startDate, periodState.endDate);
+    });
   }, [variableExpenses, periodState]);
+
+  // Card Invoices Total for the Selected Competence Month
+  const cardInvoicesSummary = useMemo(() => {
+    const cardList: Array<{
+      cardId: string;
+      cardName: string;
+      amount: number;
+      itemsCount: number;
+    }> = [];
+
+    cards.filter((c) => !c.archived).forEach((card) => {
+      const cardVariablePurchases = variableExpenses.filter(
+        (v) => !v.archived && (v.cardId === card.id || (v.paymentMethod === 'Cartão' && v.cardId === card.id))
+      );
+
+      let cardTotalMonth = 0;
+      let count = 0;
+
+      cardVariablePurchases.forEach((v) => {
+        const N = v.installmentsCount && v.installmentsCount > 0 ? v.installmentsCount : 1;
+        const amounts = calculateInstallmentAmounts(v.amount, N);
+        for (let k = 1; k <= N; k++) {
+          const comp = getInstallmentCompetence(v.date, card.closingDay || 10, k);
+          if (comp.month === selectedMonth && comp.year === selectedYear) {
+            cardTotalMonth += amounts[k - 1];
+            count++;
+          }
+        }
+      });
+
+      // Fixed expenses attached to this card
+      fixedExpenses.filter((f) => !f.archived && f.cardId === card.id).forEach((f) => {
+        cardTotalMonth += f.amount;
+        count++;
+      });
+
+      if (cardTotalMonth > 0) {
+        cardList.push({
+          cardId: card.id,
+          cardName: card.name,
+          amount: cardTotalMonth,
+          itemsCount: count,
+        });
+      }
+    });
+
+    const total = cardList.reduce((acc, c) => acc + c.amount, 0);
+    return { list: cardList, total };
+  }, [cards, variableExpenses, fixedExpenses, selectedMonth, selectedYear]);
+
+  // Loan Installments for the Selected Competence Month
+  const loansSummary = useMemo(() => {
+    const yearMonthStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+    const loanItems: Array<{
+      loanId: string;
+      description: string;
+      bankName: string;
+      installmentNumber: number;
+      installmentsTotal: number;
+      dueDate: string;
+      amount: number;
+      principal: number;
+      interest: number;
+      status: string;
+    }> = [];
+
+    loans.filter((l) => !l.archived).forEach((l) => {
+      const bank = banks.find((b) => b.id === l.bankId);
+      const schedule =
+        l.installments && l.installments.length > 0
+          ? l.installments
+          : l.amortizationSystem === 'SAC'
+          ? calculateSACSchedule(l.contractedAmount, l.interestRateMonthly, l.installmentsTotal, l.contractDate || getCurrentDateFormatted(), l.iofAmount || 0, l.insuranceAmount || 0, l.feesAmount || 0, l.firstDueDate)
+          : calculatePRICESchedule(l.contractedAmount, l.interestRateMonthly, l.installmentsTotal, l.contractDate || getCurrentDateFormatted(), l.iofAmount || 0, l.insuranceAmount || 0, l.feesAmount || 0, l.firstDueDate);
+
+      schedule.forEach((inst) => {
+        if (inst.dueDate?.startsWith(yearMonthStr)) {
+          loanItems.push({
+            loanId: l.id,
+            description: `Parcela ${inst.number}/${l.installmentsTotal} - ${l.type} ${l.contractNumber ? `(#${l.contractNumber})` : ''}`,
+            bankName: bank?.name || 'Banco',
+            installmentNumber: inst.number,
+            installmentsTotal: l.installmentsTotal,
+            dueDate: inst.dueDate,
+            amount: inst.amount,
+            principal: inst.principal,
+            interest: inst.interest,
+            status: inst.status,
+          });
+        }
+      });
+    });
+
+    const total = loanItems.reduce((acc, i) => acc + i.amount, 0);
+    return { list: loanItems, total };
+  }, [loans, banks, selectedMonth, selectedYear]);
 
   // Combined Consolidated Transactions Array
   const consolidatedTransactions = useMemo(() => {
@@ -137,7 +279,7 @@ export const RelatoriosModule: React.FC = () => {
       id: string;
       date: string;
       description: string;
-      type: 'Receita' | 'Despesa Fixa' | 'Despesa Variável';
+      type: string;
       nature: 'Entrada' | 'Saída';
       amount: number;
       categoryId: string;
@@ -177,12 +319,11 @@ export const RelatoriosModule: React.FC = () => {
       });
     });
 
-    // Map Fixed Expenses
-    filteredFixed.forEach((f) => {
+    // Map Non-Card Fixed Expenses
+    filteredFixedNonCard.forEach((f) => {
       const cat = categories.find((c) => c.id === f.categoryId);
       const sub = subcategories.find((s) => s.id === f.subcategoryId);
       const bk = banks.find((b) => b.id === f.bankId);
-      const cd = cards.find((c) => c.id === f.cardId);
       const yearMonth = periodState.startDate.substring(0, 7);
       const dayStr = String(f.dueDay || 1).padStart(2, '0');
       list.push({
@@ -198,20 +339,17 @@ export const RelatoriosModule: React.FC = () => {
         subcategoryName: sub?.name || '-',
         bankId: f.bankId,
         bankName: bk?.name || '-',
-        cardId: f.cardId,
-        cardName: cd?.name || '-',
         paymentMethod: f.paymentMethod || 'Débito / Pix',
         status: f.status || 'Pendente',
         createdBy: 'Sistema',
       });
     });
 
-    // Map Variable Expenses
-    filteredVariable.forEach((v) => {
+    // Map Non-Card Variable Expenses
+    filteredVariableNonCard.forEach((v) => {
       const cat = categories.find((c) => c.id === v.categoryId);
       const sub = subcategories.find((s) => s.id === v.subcategoryId);
       const bk = banks.find((b) => b.id === v.bankId);
-      const cd = cards.find((c) => c.id === v.cardId);
       list.push({
         id: v.id,
         date: v.date,
@@ -225,10 +363,51 @@ export const RelatoriosModule: React.FC = () => {
         subcategoryName: sub?.name || '-',
         bankId: v.bankId,
         bankName: bk?.name || '-',
-        cardId: v.cardId,
-        cardName: cd?.name || '-',
-        paymentMethod: v.paymentMethod || 'Cartão / Pix',
+        paymentMethod: v.paymentMethod || 'Pix / Dinheiro',
         status: v.status || 'Pago',
+        createdBy: 'Sistema',
+      });
+    });
+
+    // Map Consolidated Credit Card Invoices
+    cardInvoicesSummary.list.forEach((ci) => {
+      const cd = cards.find((c) => c.id === ci.cardId);
+      const bk = banks.find((b) => b.id === cd?.bankId);
+      list.push({
+        id: `fatura_${ci.cardId}_${selectedYear}_${selectedMonth}`,
+        date: `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-10`,
+        description: `Fatura Cartão ${ci.cardName} (${ci.itemsCount} itens)`,
+        type: 'Fatura de Cartão',
+        nature: 'Saída',
+        amount: ci.amount,
+        categoryId: 'cartao_consolidado',
+        categoryName: 'Cartões de Crédito',
+        subcategoryName: ci.cardName,
+        bankId: cd?.bankId,
+        bankName: bk?.name || 'Banco',
+        cardId: ci.cardId,
+        cardName: ci.cardName,
+        paymentMethod: 'Fatura de Cartão',
+        status: 'Pendente',
+        createdBy: 'Sistema',
+      });
+    });
+
+    // Map Loan Installments
+    loansSummary.list.forEach((inst) => {
+      list.push({
+        id: `loan_${inst.loanId}_${inst.installmentNumber}`,
+        date: inst.dueDate,
+        description: inst.description,
+        type: 'Empréstimo / Financiamento',
+        nature: 'Saída',
+        amount: inst.amount,
+        categoryId: 'emprestimos',
+        categoryName: 'Empréstimos & Financiamentos',
+        subcategoryName: 'Amortização & Juros',
+        bankName: inst.bankName,
+        paymentMethod: 'Débito Automático',
+        status: inst.status === 'Pago' ? 'Pago' : 'Pendente',
         createdBy: 'Sistema',
       });
     });
@@ -260,8 +439,10 @@ export const RelatoriosModule: React.FC = () => {
     });
   }, [
     filteredIncomes,
-    filteredFixed,
-    filteredVariable,
+    filteredFixedNonCard,
+    filteredVariableNonCard,
+    cardInvoicesSummary,
+    loansSummary,
     categories,
     subcategories,
     banks,
@@ -269,14 +450,19 @@ export const RelatoriosModule: React.FC = () => {
     searchQuery,
     sortField,
     sortDir,
-    periodState,
+    selectedMonth,
+    selectedYear,
+    periodState.startDate,
   ]);
 
   // Key Financial Metric Totals
   const totalIncomesVal = useMemo(() => filteredIncomes.reduce((acc, i) => acc + i.amount, 0), [filteredIncomes]);
-  const totalFixedVal = useMemo(() => filteredFixed.reduce((acc, f) => acc + f.amount, 0), [filteredFixed]);
-  const totalVarVal = useMemo(() => filteredVariable.reduce((acc, v) => acc + v.amount, 0), [filteredVariable]);
-  const totalExpensesVal = totalFixedVal + totalVarVal;
+  const totalFixedVal = useMemo(() => filteredFixedNonCard.reduce((acc, f) => acc + f.amount, 0), [filteredFixedNonCard]);
+  const totalVarVal = useMemo(() => filteredVariableNonCard.reduce((acc, v) => acc + v.amount, 0), [filteredVariableNonCard]);
+  const totalCardInvoicesVal = cardInvoicesSummary.total;
+  const totalLoansVal = loansSummary.total;
+
+  const totalExpensesVal = totalFixedVal + totalVarVal + totalCardInvoicesVal + totalLoansVal;
   const netResultVal = totalIncomesVal - totalExpensesVal;
   const netMarginPercent = totalIncomesVal > 0 ? (netResultVal / totalIncomesVal) * 100 : 0;
 
@@ -583,6 +769,14 @@ export const RelatoriosModule: React.FC = () => {
           </button>
         </div>
 
+        {/* Month Competence Bar with Arrows */}
+        <MonthCompetenceBar
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
+          onChangeMonth={handleMonthCompetenceChange}
+          title="Navegação por Mês de Competência"
+        />
+
         {/* Global Period Filter Bar Component */}
         <PeriodFilterBar
           filterState={periodState}
@@ -881,25 +1075,25 @@ export const RelatoriosModule: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 2. Custos & Despesas Fixas */}
+                {/* 2. Custos & Despesas Fixas (Sem Cartão) */}
                 <div className="p-3.5 flex items-center justify-between text-slate-700 dark:text-slate-300 pl-8 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                   <div>
-                    <span className="font-semibold">2. (-) Custos & Despesas Fixas / Recorrentes</span>
-                    <p className="text-[10px] text-slate-400">Contas fixas, aluguel, utilidades e assinaturas</p>
+                    <span className="font-semibold">2. (-) Custos & Despesas Fixas (sem Cartão)</span>
+                    <p className="text-[10px] text-slate-400">Aluguel, luz, internet, boletos e débitos automáticos</p>
                   </div>
                   <div className="flex items-center gap-12 font-mono">
                     <span className="text-slate-500">
                       {totalIncomesVal > 0 ? ((totalFixedVal / totalIncomesVal) * 100).toFixed(1) : '0.0'}%
                     </span>
-                    <span className="font-bold text-rose-600">({formatCurrency(totalFixedVal)})</span>
+                    <span className="font-bold text-amber-600 dark:text-amber-400">({formatCurrency(totalFixedVal)})</span>
                   </div>
                 </div>
 
-                {/* 3. Despesas Variáveis */}
+                {/* 3. Despesas Variáveis (Sem Cartão) */}
                 <div className="p-3.5 flex items-center justify-between text-slate-700 dark:text-slate-300 pl-8 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                   <div>
-                    <span className="font-semibold">3. (-) Despesas Variáveis & Consumo Operacional</span>
-                    <p className="text-[10px] text-slate-400">Gastos variáveis, cartão de crédito e imprevistos</p>
+                    <span className="font-semibold">3. (-) Despesas Variáveis & Consumo (sem Cartão)</span>
+                    <p className="text-[10px] text-slate-400">Gastos diários via Pix, dinheiro ou débito direto</p>
                   </div>
                   <div className="flex items-center gap-12 font-mono">
                     <span className="text-slate-500">
@@ -909,10 +1103,42 @@ export const RelatoriosModule: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 4. Total Despesas */}
+                {/* 4. Faturas de Cartão de Crédito (Saldo Consolidado) */}
+                <div className="p-3.5 flex items-center justify-between text-slate-700 dark:text-slate-300 pl-8 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <div>
+                    <span className="font-semibold">4. (-) Faturas de Cartão de Crédito (Saldo Consolidado)</span>
+                    <p className="text-[10px] text-purple-500 dark:text-purple-400">
+                      Consolida todas as compras e parcelas do cartão do mês (prevalência do cartão)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-12 font-mono">
+                    <span className="text-slate-500">
+                      {totalIncomesVal > 0 ? ((totalCardInvoicesVal / totalIncomesVal) * 100).toFixed(1) : '0.0'}%
+                    </span>
+                    <span className="font-bold text-purple-600 dark:text-purple-400">({formatCurrency(totalCardInvoicesVal)})</span>
+                  </div>
+                </div>
+
+                {/* 5. Empréstimos e Financiamentos */}
+                <div className="p-3.5 flex items-center justify-between text-slate-700 dark:text-slate-300 pl-8 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <div>
+                    <span className="font-semibold">5. (-) Amortização & Juros de Empréstimos</span>
+                    <p className="text-[10px] text-pink-500 dark:text-pink-400">
+                      Parcelas vencidas/pagas no mês de competência
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-12 font-mono">
+                    <span className="text-slate-500">
+                      {totalIncomesVal > 0 ? ((totalLoansVal / totalIncomesVal) * 100).toFixed(1) : '0.0'}%
+                    </span>
+                    <span className="font-bold text-pink-600 dark:text-pink-400">({formatCurrency(totalLoansVal)})</span>
+                  </div>
+                </div>
+
+                {/* 6. Total Despesas Operacionais */}
                 <div className="p-3.5 flex items-center justify-between font-bold text-rose-700 dark:text-rose-400 bg-rose-50/60 dark:bg-rose-950/20">
                   <span className="flex items-center gap-2">
-                    <ArrowDownRight className="w-4 h-4" /> 4. (=) TOTAL DE DESPESAS OPERACIONAIS
+                    <ArrowDownRight className="w-4 h-4" /> 6. (=) TOTAL DE DESPESAS OPERACIONAIS
                   </span>
                   <div className="flex items-center gap-12 font-mono">
                     <span className="text-slate-500">
@@ -922,7 +1148,7 @@ export const RelatoriosModule: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 5. Resultado Líquido */}
+                {/* 7. Resultado Líquido */}
                 <div
                   className={`p-4 flex items-center justify-between ${
                     netResultVal >= 0
@@ -932,7 +1158,7 @@ export const RelatoriosModule: React.FC = () => {
                 >
                   <div>
                     <span className="text-sm font-black uppercase tracking-tight">
-                      5. (=) RESULTADO LÍQUIDO DO EXERCÍCIO
+                      7. (=) RESULTADO LÍQUIDO DO EXERCÍCIO
                     </span>
                     <p className="text-[11px] font-medium opacity-80 mt-0.5">
                       Margem de Lucro Operacional:{' '}

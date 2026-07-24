@@ -89,16 +89,29 @@ export async function initFirebaseSync() {
     }
   };
 
-  // 1. Seed initial datasets to central Firestore if empty
+  // 1. Clean up legacy auto-generated seed entries from Firestore
+  const seedIdsToDelete = [
+    'inc_salario_julho', 'inc_freelance_julho',
+    'fix_aluguel', 'fix_plano_saude', 'fix_internet',
+    'var_mercado_semana1', 'var_apple_store', 'var_supermercado_pao_acucar',
+    'var_restaurante_outback', 'var_posto_gasolina', 'var_farmacia_drogasil',
+    'var_combustivel_posto', 'var_passagem_aerea_latam', 'var_hotel_pousada',
+    'var_vestuario_zara', 'var_uber_viagens',
+  ];
+
+  for (const id of seedIdsToDelete) {
+    if (id.startsWith('inc_')) deleteDocFromFirestore('incomes', id);
+    else if (id.startsWith('fix_')) deleteDocFromFirestore('fixedExpenses', id);
+    else if (id.startsWith('var_')) deleteDocFromFirestore('variableExpenses', id);
+  }
+
+  // 2. Seed initial structural datasets to central Firestore if empty
   await seedIfEmpty('users', store.users);
   await seedIfEmpty('banks', store.banks);
   await seedIfEmpty('cards', store.cards);
   await seedIfEmpty('cardInvoices', store.cardInvoices);
   await seedIfEmpty('categories', store.categories);
   await seedIfEmpty('subcategories', store.subcategories);
-  await seedIfEmpty('incomes', store.incomes);
-  await seedIfEmpty('fixedExpenses', store.fixedExpenses);
-  await seedIfEmpty('variableExpenses', store.variableExpenses);
   await seedIfEmpty('loans', store.loans);
   await seedIfEmpty('investments', store.investments);
   await seedIfEmpty('goals', store.goals);
