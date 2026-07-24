@@ -7,13 +7,26 @@ import { SmartDeleteModal } from '../common/SmartDeleteModal';
 import { TrendingUp, Plus, X, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 export const InvestimentosModule: React.FC = () => {
-  const { investments, banks, addInvestment, updateInvestment, deleteInvestment, depositInvestment, withdrawInvestment } =
-    useFinancialStore();
+  const {
+    investments,
+    banks,
+    addInvestment,
+    updateInvestment,
+    deleteInvestment,
+    depositInvestment,
+    withdrawInvestment,
+    recalculateInvestmentYields,
+  } = useFinancialStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Investment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Investment | null>(null);
+
+  // Market Rates State
+  const [cdiRate, setCdiRate] = useState<number>(10.5);
+  const [selicRate, setSelicRate] = useState<number>(10.5);
+  const [ipcaRate, setIpcaRate] = useState<number>(4.0);
 
   // Form State
   const [institution, setInstitution] = useState('BTG Pactual');
@@ -188,6 +201,73 @@ export const InvestimentosModule: React.FC = () => {
           <p className="text-xs text-emerald-800 dark:text-emerald-300 font-bold uppercase tracking-wider">Rendimento Acumulado</p>
           <p className="text-2xl font-black mt-1 text-emerald-600 dark:text-emerald-400 font-mono">+{formatCurrency(totalGain)}</p>
           <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-2">Lucro líquido dos investimentos</p>
+        </div>
+      </div>
+
+      {/* Market Indexers & Automatic Yield Recalculation */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-500" />
+              Taxas de Mercado & Indexadores (CDI, Selic, IPCA)
+            </h4>
+            <p className="text-xs text-slate-400">
+              Ajuste as taxas de referência ou utilize a atualização automática dos rendimentos da carteira
+            </p>
+          </div>
+
+          <button
+            onClick={() => recalculateInvestmentYields({ cdi: cdiRate, selic: selicRate, ipca: ipcaRate })}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5"
+          >
+            <TrendingUp className="w-4 h-4" />
+            Recalcular Rentabilidade Automática
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
+          <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div>
+              <span className="font-bold text-slate-700 dark:text-slate-300">CDI (% a.a.)</span>
+              <p className="text-[10px] text-slate-400">Referência CDBs/LCIs</p>
+            </div>
+            <input
+              type="number"
+              step="0.01"
+              value={cdiRate}
+              onChange={(e) => setCdiRate(parseFloat(e.target.value) || 0)}
+              className="w-16 p-1 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-emerald-600"
+            />
+          </div>
+
+          <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div>
+              <span className="font-bold text-slate-700 dark:text-slate-300">SELIC (% a.a.)</span>
+              <p className="text-[10px] text-slate-400">Taxa Básica Banco Central</p>
+            </div>
+            <input
+              type="number"
+              step="0.01"
+              value={selicRate}
+              onChange={(e) => setSelicRate(parseFloat(e.target.value) || 0)}
+              className="w-16 p-1 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-indigo-600"
+            />
+          </div>
+
+          <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div>
+              <span className="font-bold text-slate-700 dark:text-slate-300">IPCA (% a.a.)</span>
+              <p className="text-[10px] text-slate-400">Inflação Tesouro IPCA+</p>
+            </div>
+            <input
+              type="number"
+              step="0.01"
+              value={ipcaRate}
+              onChange={(e) => setIpcaRate(parseFloat(e.target.value) || 0)}
+              className="w-16 p-1 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-amber-600"
+            />
+          </div>
         </div>
       </div>
 

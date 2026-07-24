@@ -21,7 +21,6 @@ import { RelatoriosModule } from './components/modules/RelatoriosModule';
 import { UsuariosModule } from './components/modules/UsuariosModule';
 import { ConfiguracoesModule } from './components/modules/ConfiguracoesModule';
 import { BackupModule } from './components/modules/BackupModule';
-import { LixeiraModule } from './components/modules/LixeiraModule';
 import { AuditoriaModule } from './components/modules/AuditoriaModule';
 
 export function App() {
@@ -68,13 +67,14 @@ export function App() {
           {activeModule === 'emprestimos' && <EmprestimosModule />}
           {activeModule === 'investimentos' && <InvestimentosModule />}
           {activeModule === 'metas' && <MetasModule />}
-          {activeModule === 'categorias' && <CategoriasModule />}
+          {(activeModule === 'categorias' || activeModule === 'subcategorias') && (
+            <ConfiguracoesModule initialTab="categorias" />
+          )}
           {activeModule === 'transferencias' && <TransferenciasModule />}
           {activeModule === 'relatorios' && <RelatoriosModule />}
           {activeModule === 'usuarios' && <UsuariosModule />}
-          {activeModule === 'configuracoes' && <ConfiguracoesModule />}
+          {activeModule === 'configuracoes' && <ConfiguracoesModule initialTab="geral" />}
           {activeModule === 'backup' && <BackupModule />}
-          {activeModule === 'lixeira' && <LixeiraModule />}
           {activeModule === 'auditoria' && <AuditoriaModule />}
         </main>
       </div>

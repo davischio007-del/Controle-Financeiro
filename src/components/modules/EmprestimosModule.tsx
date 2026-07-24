@@ -2,7 +2,16 @@ import React, { useState } from 'react';
 import { useFinancialStore } from '../../services/storage';
 import { Loan, LoanType, AmortizationSystem, InstallmentStatus, LoanInstallment } from '../../types';
 import { DataTable, Column } from '../common/DataTable';
-import { formatCurrency, calculateEarlyPayoffDetails, getCurrentDateFormatted } from '../../lib/utils';
+import {
+  formatCurrency,
+  formatDate,
+  calculateEarlyPayoffDetails,
+  calculateExtraAmortizationDetails,
+  getCurrentDateFormatted,
+  calculatePRICESchedule,
+  calculateSACSchedule,
+  calculateCustomSchedule,
+} from '../../lib/utils';
 import { SmartDeleteModal } from '../common/SmartDeleteModal';
 import {
   Plus,
@@ -23,6 +32,8 @@ import {
   Building2,
   DollarSign,
   Info,
+  Calendar,
+  Edit3,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -40,17 +51,118 @@ import {
   CartesianGrid,
 } from 'recharts';
 
+export function getLoanInstallments(loan: Loan): LoanInstallment[] {
+  const rawInsts = loan.installments || [];
+  const hasValidAmounts =
+    rawInsts.length > 0 &&
+    rawInsts.some((i) => (i.amount || 0) > 0 || (i.principal || 0) > 0);
+
+  const baseDate = loan.contractDate || (rawInsts[0]?.dueDate && !rawInsts[0].dueDate.startsWith('1970') && !rawInsts[0].dueDate.startsWith('1969') ? rawInsts[0].dueDate : getCurrentDateFormatted());
+  const firstDue = loan.firstDueDate;
+
+  let computedSchedule: LoanInstallment[] = [];
+  if (loan.amortizationSystem === 'SAC') {
+    computedSchedule = calculateSACSchedule(
+      loan.contractedAmount || 0,
+      loan.interestRateMonthly || 0,
+      loan.installmentsTotal || 12,
+      baseDate,
+      loan.iofAmount || 0,
+      loan.insuranceAmount || 0,
+      loan.feesAmount || 0,
+      firstDue
+    );
+  } else if (loan.amortizationSystem === 'Personalizado') {
+    computedSchedule = calculateCustomSchedule(
+      loan.contractedAmount || 0,
+      loan.interestRateMonthly || 0,
+      loan.installmentsTotal || 12,
+      baseDate,
+      loan.iofAmount || 0,
+      loan.insuranceAmount || 0,
+      loan.feesAmount || 0,
+      firstDue
+    );
+  } else {
+    computedSchedule = calculatePRICESchedule(
+      loan.contractedAmount || 0,
+      loan.interestRateMonthly || 0,
+      loan.installmentsTotal || 12,
+      baseDate,
+      loan.iofAmount || 0,
+      loan.insuranceAmount || 0,
+      loan.feesAmount || 0,
+      firstDue
+    );
+  }
+
+  if (hasValidAmounts) {
+    return rawInsts.map((inst, idx) => {
+      const calc = computedSchedule[idx];
+      const amount = (inst.amount && inst.amount > 0) ? inst.amount : (calc?.amount || 0);
+      const principal = (inst.principal && inst.principal > 0) ? inst.principal : (calc?.principal || 0);
+      const interest = (inst.interest && inst.interest > 0) ? inst.interest : (calc?.interest || 0);
+      const remainingBalance =
+        inst.remainingBalance !== undefined && inst.remainingBalance > 0
+          ? inst.remainingBalance
+          : (calc?.remainingBalance || 0);
+      const dueDate =
+        inst.dueDate && !inst.dueDate.startsWith('1970') && !inst.dueDate.startsWith('1969')
+          ? inst.dueDate
+          : (calc?.dueDate || getCurrentDateFormatted());
+
+      return {
+        ...inst,
+        amount,
+        principal,
+        interest,
+        remainingBalance,
+        dueDate,
+      };
+    });
+  }
+
+  if (rawInsts.length > 0) {
+    return computedSchedule.map((calcInst, index) => {
+      const existing = rawInsts[index] || rawInsts.find((r) => r.number === calcInst.number);
+      if (existing) {
+        const isPaidStatus = existing.status === 'Paga' || existing.status === 'Quitada' || existing.status === 'Antecipada';
+        return {
+          ...calcInst,
+          status: existing.status || calcInst.status,
+          paidAmount: existing.paidAmount !== undefined && existing.paidAmount > 0
+            ? existing.paidAmount
+            : (isPaidStatus ? calcInst.amount : 0),
+          paidDate: existing.paidDate || calcInst.paidDate,
+          dueDate: existing.dueDate && !existing.dueDate.startsWith('1970') && !existing.dueDate.startsWith('1969')
+            ? existing.dueDate
+            : calcInst.dueDate,
+        };
+      }
+      return calcInst;
+    });
+  }
+
+  return computedSchedule;
+}
+
 export const EmprestimosModule: React.FC = () => {
   const {
     loans,
     banks,
+    cards,
     addLoan,
     updateLoan,
     deleteLoanSmart,
+    deleteLoan,
     payLoanInstallment,
     updateLoanInstallmentStatus,
     earlyPayoffLoan,
+    applyExtraAmortizationLoan,
   } = useFinancialStore();
+
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentSuccess, setPaymentSuccess] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Loan | null>(null);
@@ -72,9 +184,27 @@ export const EmprestimosModule: React.FC = () => {
   const [payoffUntilInstallment, setPayoffUntilInstallment] = useState<number>(0);
   const [simulatedDate, setSimulatedDate] = useState<string>(getCurrentDateFormatted());
 
+  // Extra Amortization Modal State
+  const [extraAmortModalLoan, setExtraAmortModalLoan] = useState<Loan | null>(null);
+  const [extraAmortAmount, setExtraAmortAmount] = useState<number>(1000);
+  const [extraAmortDate, setExtraAmortDate] = useState<string>(getCurrentDateFormatted());
+  const [extraAmortOption, setExtraAmortOption] = useState<'prazo' | 'parcela'>('prazo');
+  const [extraAmortBankId, setExtraAmortBankId] = useState<string>(banks[0]?.id || '');
+
+  // Direct Delete Modal State - Removed duplicate, using single onDelete target
+
   // Form State
   const [bankId, setBankId] = useState('');
   const [contractNumber, setContractNumber] = useState('');
+  const [contractDate, setContractDate] = useState<string>(getCurrentDateFormatted());
+  const [firstDueDate, setFirstDueDate] = useState<string>(() => {
+    const today = new Date();
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    const y = nextMonth.getFullYear();
+    const m = String(nextMonth.getMonth() + 1).padStart(2, '0');
+    const day = String(nextMonth.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
   const [type, setType] = useState<string>('Consignado');
   const [customType, setCustomType] = useState('');
   const [contractedAmount, setContractedAmount] = useState<number>(30000);
@@ -91,10 +221,58 @@ export const EmprestimosModule: React.FC = () => {
   // Table status filter
   const [statusFilter, setStatusFilter] = useState<string>('Todos');
 
+  const handleContractDateChange = (val: string) => {
+    setContractDate(val);
+    if (val) {
+      const clean = val.split('T')[0];
+      const parts = clean.split('-').map(Number);
+      if (parts.length === 3 && !isNaN(parts[0])) {
+        const d = new Date(parts[0], parts[1] - 1, parts[2]);
+        d.setMonth(d.getMonth() + 1);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        setFirstDueDate(`${y}-${m}-${day}`);
+      }
+    }
+  };
+
+  // Calculated schedule and average installment for the registration form
+  const calculatedSchedule = React.useMemo(() => {
+    if (!contractedAmount || !installmentsTotal) return [];
+    const startDate = contractDate || getCurrentDateFormatted();
+    if (amortizationSystem === 'SAC') {
+      return calculateSACSchedule(contractedAmount, interestRateMonthly, installmentsTotal, startDate, 0, 0, feesAmount, firstDueDate);
+    } else if (amortizationSystem === 'Personalizado') {
+      return calculateCustomSchedule(contractedAmount, interestRateMonthly, installmentsTotal, startDate, 0, 0, feesAmount, firstDueDate);
+    } else {
+      return calculatePRICESchedule(contractedAmount, interestRateMonthly, installmentsTotal, startDate, 0, 0, feesAmount, firstDueDate);
+    }
+  }, [contractedAmount, interestRateMonthly, installmentsTotal, amortizationSystem, feesAmount, contractDate, firstDueDate]);
+
+  const averageInstallmentAmount = React.useMemo(() => {
+    if (!calculatedSchedule.length) return 0;
+    const total = calculatedSchedule.reduce((acc, curr) => acc + curr.amount, 0);
+    return total / calculatedSchedule.length;
+  }, [calculatedSchedule]);
+
+  const activeLoanInstallments = React.useMemo(() => {
+    if (!detailLoan) return [];
+    return getLoanInstallments(detailLoan);
+  }, [detailLoan]);
+
   const openAddModal = () => {
     setEditingItem(null);
     setBankId(banks[0]?.id || '');
     setContractNumber(`CT-${Math.floor(100000 + Math.random() * 900000)}-${new Date().getFullYear()}`);
+    const today = getCurrentDateFormatted();
+    setContractDate(today);
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    setFirstDueDate(`${y}-${m}-${day}`);
     setType('Consignado');
     setCustomType('');
     setContractedAmount(30000);
@@ -102,11 +280,33 @@ export const EmprestimosModule: React.FC = () => {
     setInterestRateMonthly(1.4);
     setInterestRateYearly(18.16);
     setCetRateYearly(19.80);
-    setIofAmount(450);
-    setInsuranceAmount(250);
+    setIofAmount(0);
+    setInsuranceAmount(0);
     setFeesAmount(0);
     setAmortizationSystem('PRICE');
     setInstallmentsTotal(48);
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (loan: Loan) => {
+    setEditingItem(loan);
+    setBankId(loan.bankId);
+    setContractNumber(loan.contractNumber || '');
+    setContractDate(loan.contractDate || getCurrentDateFormatted());
+    const defaultFirstDue = loan.firstDueDate || (loan.installments?.[0]?.dueDate || '');
+    setFirstDueDate(defaultFirstDue);
+    setType(loan.type || 'Consignado');
+    setCustomType(loan.customType || '');
+    setContractedAmount(loan.contractedAmount);
+    setNetAmountReceived(loan.netAmountReceived || loan.contractedAmount);
+    setInterestRateMonthly(loan.interestRateMonthly);
+    setInterestRateYearly(loan.interestRateYearly);
+    setCetRateYearly(loan.cetRateYearly);
+    setIofAmount(loan.iofAmount || 0);
+    setInsuranceAmount(loan.insuranceAmount || 0);
+    setFeesAmount(loan.feesAmount || 0);
+    setAmortizationSystem(loan.amortizationSystem);
+    setInstallmentsTotal(loan.installmentsTotal);
     setIsModalOpen(true);
   };
 
@@ -123,6 +323,8 @@ export const EmprestimosModule: React.FC = () => {
       updateLoan(editingItem.id, {
         bankId,
         contractNumber,
+        contractDate,
+        firstDueDate,
         type: type === 'Outros' ? customType || 'Outros' : type,
         customType: type === 'Outros' ? customType : undefined,
         contractedAmount,
@@ -130,8 +332,8 @@ export const EmprestimosModule: React.FC = () => {
         interestRateMonthly,
         interestRateYearly,
         cetRateYearly,
-        iofAmount,
-        insuranceAmount,
+        iofAmount: 0,
+        insuranceAmount: 0,
         feesAmount,
         amortizationSystem,
         installmentsTotal,
@@ -140,6 +342,8 @@ export const EmprestimosModule: React.FC = () => {
       addLoan({
         bankId,
         contractNumber,
+        contractDate,
+        firstDueDate,
         type: type === 'Outros' ? customType || 'Outros' : type,
         customType: type === 'Outros' ? customType : undefined,
         contractedAmount,
@@ -147,13 +351,13 @@ export const EmprestimosModule: React.FC = () => {
         interestRateMonthly,
         interestRateYearly,
         cetRateYearly,
-        iofAmount,
-        insuranceAmount,
+        iofAmount: 0,
+        insuranceAmount: 0,
         feesAmount,
         amortizationSystem,
         installmentsTotal,
         installmentsPaid: 0,
-        installmentAmount: contractedAmount / installmentsTotal,
+        installmentAmount: averageInstallmentAmount || contractedAmount / installmentsTotal,
         outstandingBalance: contractedAmount,
         paidAmount: 0,
         paidInterest: 0,
@@ -166,8 +370,21 @@ export const EmprestimosModule: React.FC = () => {
   };
 
   const handlePayInstallment = (loan: Loan, installmentNumber: number) => {
-    payLoanInstallment(loan.id, installmentNumber, loan.bankId);
-    // Refresh detail target if open
+    setPaymentError(null);
+    setPaymentSuccess(null);
+    const inst = loan.installments.find((i) => i.number === installmentNumber);
+    const res = payLoanInstallment(loan.id, installmentNumber, loan.bankId);
+    if (!res.success) {
+      if (inst) {
+        setEditingInstallment({ loanId: loan.id, inst });
+        setInstNewStatus('Paga');
+        setInstPaidAmountVal(inst.amount);
+        setInstBankId(loan.bankId || banks[0]?.id || cards[0]?.id || '');
+      }
+      setPaymentError(res.error || 'Pagamento rejeitado por saldo/limite insuficiente.');
+      return;
+    }
+    setPaymentSuccess(`Parcela nº ${installmentNumber} paga com sucesso! Saldo/limite atualizado.`);
     if (detailLoan?.id === loan.id) {
       const refreshed = useFinancialStore.getState().loans.find((l) => l.id === loan.id);
       if (refreshed) setDetailLoan(refreshed);
@@ -176,13 +393,20 @@ export const EmprestimosModule: React.FC = () => {
 
   const handleSaveInstallmentStatus = () => {
     if (!editingInstallment) return;
-    updateLoanInstallmentStatus(
+    setPaymentError(null);
+    setPaymentSuccess(null);
+    const res = updateLoanInstallmentStatus(
       editingInstallment.loanId,
       editingInstallment.inst.number,
       instNewStatus,
       instPaidAmountVal,
       instBankId
     );
+    if (!res.success) {
+      setPaymentError(res.error || 'Pagamento rejeitado.');
+      return;
+    }
+    setPaymentSuccess('Situação da parcela alterada com sucesso! Saldo/limite atualizado.');
     setEditingInstallment(null);
     if (detailLoan?.id === editingInstallment.loanId) {
       const refreshed = useFinancialStore.getState().loans.find((l) => l.id === editingInstallment.loanId);
@@ -191,10 +415,23 @@ export const EmprestimosModule: React.FC = () => {
   };
 
   // KPIs
-  const totalContracted = loans.reduce((acc, l) => acc + l.contractedAmount, 0);
-  const totalOutstanding = loans.reduce((acc, l) => acc + l.outstandingBalance, 0);
-  const totalPaidAmort = loans.reduce((acc, l) => acc + l.paidAmortization, 0);
-  const totalPaidInterest = loans.reduce((acc, l) => acc + l.paidInterest, 0);
+  const totalContracted = loans.reduce((acc, l) => acc + (l.contractedAmount || 0), 0);
+  const totalOutstanding = loans.reduce((acc, l) => {
+    const insts = getLoanInstallments(l);
+    const paidInsts = insts.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada');
+    const paidAmort = paidInsts.reduce((a, i) => a + (i.principal || 0), 0);
+    return acc + Math.max(0, (l.contractedAmount || 0) - paidAmort);
+  }, 0);
+  const totalPaidAmort = loans.reduce((acc, l) => {
+    const insts = getLoanInstallments(l);
+    const paidInsts = insts.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada');
+    return acc + paidInsts.reduce((a, i) => a + (i.principal || 0), 0);
+  }, 0);
+  const totalPaidInterest = loans.reduce((acc, l) => {
+    const insts = getLoanInstallments(l);
+    const paidInsts = insts.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada');
+    return acc + paidInsts.reduce((a, i) => a + (i.interest || 0), 0);
+  }, 0);
 
   const columns: Column<Loan>[] = [
     {
@@ -211,9 +448,18 @@ export const EmprestimosModule: React.FC = () => {
                 </span>
               )}
             </div>
-            <span className="text-[11px] text-slate-400">
-              {b?.name} • {r.amortizationSystem} ({r.interestRateMonthly}% a.m. / CET {r.cetRateYearly}% a.a.)
-            </span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-[11px] text-slate-400">
+                {b?.name} • {r.amortizationSystem} ({r.interestRateMonthly}% a.m. / CET {r.cetRateYearly}% a.a.)
+              </span>
+              <button
+                onClick={() => openEditModal(r)}
+                className="p-1 text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors inline-flex items-center"
+                title="Editar dados do contrato"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-amber-500" />
+              </button>
+            </div>
           </div>
         );
       },
@@ -233,18 +479,27 @@ export const EmprestimosModule: React.FC = () => {
     },
     {
       header: 'Saldo Devedor Atual',
-      accessor: (r) => (
-        <div>
-          <span className="font-black text-red-600 dark:text-red-400">{formatCurrency(r.outstandingBalance)}</span>
-          <p className="text-[10px] text-slate-400">Juros pagos: {formatCurrency(r.paidInterest)}</p>
-        </div>
-      ),
+      accessor: (r) => {
+        const insts = getLoanInstallments(r);
+        const paidInsts = insts.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada');
+        const paidAmort = Math.round(paidInsts.reduce((acc, i) => acc + (i.principal || 0), 0) * 100) / 100;
+        const paidInterest = Math.round(paidInsts.reduce((acc, i) => acc + (i.interest || 0), 0) * 100) / 100;
+        const dynamicOutstanding = Math.round(Math.max(0, (r.contractedAmount || 0) - paidAmort) * 100) / 100;
+
+        return (
+          <div>
+            <span className="font-black text-red-600 dark:text-red-400">{formatCurrency(dynamicOutstanding)}</span>
+            <p className="text-[10px] text-slate-400">Juros pagos: {formatCurrency(paidInterest)}</p>
+          </div>
+        );
+      },
       sortable: true,
     },
     {
       header: 'Progresso / Parcelas',
       accessor: (r) => {
-        const paidCount = r.installments.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada').length;
+        const insts = getLoanInstallments(r);
+        const paidCount = insts.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada').length;
         const pct = Math.min(100, Math.round((paidCount / (r.installmentsTotal || 1)) * 100));
         return (
           <div className="space-y-1 w-32">
@@ -262,43 +517,19 @@ export const EmprestimosModule: React.FC = () => {
     {
       header: 'Ações de Gestão',
       accessor: (r) => {
-        const nextPending = r.installments.find((i) => i.status === 'Pendente' || i.status === 'Atrasada');
         return (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={() => {
                 setDetailLoan(r);
                 setActiveTab('resumo');
               }}
-              className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1"
+              className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1 shadow-sm"
+              title="Ver Demonstrativo das Parcelas"
             >
               <FileText className="w-3.5 h-3.5 text-blue-500" />
-              Demonstrativo
+              <span>Demonstrativo</span>
             </button>
-
-            {r.status === 'Ativo' && (
-              <>
-                {nextPending && (
-                  <button
-                    onClick={() => handlePayInstallment(r, nextPending.number)}
-                    className="px-2 py-1 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors"
-                  >
-                    Pagar nº {nextPending.number}
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setEarlyPayoffLoanTarget(r);
-                    const paidCount = r.installments.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada').length;
-                    setPayoffUntilInstallment(paidCount);
-                    setPayoffBankId(r.bankId);
-                  }}
-                  className="px-2 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors"
-                >
-                  Quitar
-                </button>
-              </>
-            )}
           </div>
         );
       },
@@ -307,6 +538,40 @@ export const EmprestimosModule: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Rejection / Error Notice Banner */}
+      {paymentError && (
+        <div className="p-4 bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-800 rounded-2xl text-red-700 dark:text-red-300 text-xs font-semibold flex items-start gap-3 shadow-md animate-fade-in">
+          <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-bold text-sm text-red-800 dark:text-red-200 mb-0.5">Pagamento Rejeitado</p>
+            <p className="leading-relaxed">{paymentError}</p>
+          </div>
+          <button
+            onClick={() => setPaymentError(null)}
+            className="text-red-400 hover:text-red-700 dark:hover:text-red-200 font-black text-base px-2"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Success Notice Banner */}
+      {paymentSuccess && (
+        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-2xl text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-3 shadow-md animate-fade-in">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <div className="flex-1">
+            <p className="font-bold text-sm text-emerald-800 dark:text-emerald-200">Operação Realizada com Sucesso</p>
+            <p>{paymentSuccess}</p>
+          </div>
+          <button
+            onClick={() => setPaymentSuccess(null)}
+            className="text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-200 font-black text-base px-2"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
@@ -376,6 +641,13 @@ export const EmprestimosModule: React.FC = () => {
                     <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-mono border border-blue-500/30">
                       {detailLoan.contractNumber || 'Contrato'}
                     </span>
+                    <button
+                      onClick={() => openEditModal(detailLoan)}
+                      className="p-1 text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-colors"
+                      title="Editar Contrato"
+                    >
+                      <Edit3 className="w-4 h-4 text-amber-400" />
+                    </button>
                     <span
                       className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
                         detailLoan.status === 'Ativo'
@@ -392,13 +664,66 @@ export const EmprestimosModule: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={() => setDetailLoan(null)}
-                className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setDetailLoan(null)}
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
+
+            {/* Operações e Inserções do Demonstrativo */}
+            {detailLoan.status === 'Ativo' && (
+              <div className="px-5 py-3 bg-slate-800 border-b border-slate-700/80 flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Banknote className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-bold text-slate-200">Ações do Empréstimo:</span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(() => {
+                    const nextInst = activeLoanInstallments.find((i) => i.status === 'Pendente' || i.status === 'Atrasada');
+                    return (
+                      <>
+                        {nextInst && (
+                          <button
+                            onClick={() => handlePayInstallment(detailLoan, nextInst.number)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow flex items-center gap-1.5"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Pagar nº {nextInst.number} ({formatCurrency(nextInst.amount)})
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setExtraAmortModalLoan(detailLoan);
+                            setExtraAmortAmount(1000);
+                            setExtraAmortBankId(detailLoan.bankId);
+                          }}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow flex items-center gap-1.5"
+                        >
+                          <TrendingDown className="w-3.5 h-3.5" />
+                          Amortizar Extra
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEarlyPayoffLoanTarget(detailLoan);
+                            const paidCount = activeLoanInstallments.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada').length;
+                            setPayoffUntilInstallment(paidCount);
+                            setPayoffBankId(detailLoan.bankId);
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow flex items-center gap-1.5"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Quitar Empréstimo
+                        </button>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
 
             {/* Navigation Tabs */}
             <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-5 gap-2 pt-2">
@@ -420,7 +745,7 @@ export const EmprestimosModule: React.FC = () => {
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
               >
-                2. Tabela Analítica de Parcelas ({detailLoan.installments.length})
+                2. Tabela Analítica de Parcelas ({activeLoanInstallments.length})
               </button>
               <button
                 onClick={() => setActiveTab('simulacao')}
@@ -486,17 +811,10 @@ export const EmprestimosModule: React.FC = () => {
                       </p>
                     </div>
 
-                    <div className="p-3.5 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded-2xl">
-                      <p className="text-[11px] font-bold text-purple-700 dark:text-purple-300">IOF / Seguro Totais</p>
-                      <p className="text-base font-black text-purple-600 dark:text-purple-400">
-                        {formatCurrency((detailLoan.iofAmount || 0) + (detailLoan.insuranceAmount || 0))}
-                      </p>
-                    </div>
-
-                    <div className="p-3.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl col-span-2">
+                    <div className="p-3.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl col-span-3">
                       {(() => {
-                        const paidCount = detailLoan.installments.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada').length;
-                        const details = calculateEarlyPayoffDetails(detailLoan, paidCount);
+                        const paidCount = activeLoanInstallments.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada').length;
+                        const details = calculateEarlyPayoffDetails({ ...detailLoan, installments: activeLoanInstallments }, paidCount);
                         return (
                           <div>
                             <p className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
@@ -521,6 +839,20 @@ export const EmprestimosModule: React.FC = () => {
                       Especificações Contratuais do Financiamento
                     </h4>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                      <div>
+                        <span className="text-slate-400 block">Data do Empréstimo</span>
+                        <span className="font-bold text-blue-600 dark:text-blue-400">
+                          {detailLoan.contractDate ? formatDate(detailLoan.contractDate) : 'Não informada'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Vencimento 1ª Parcela</span>
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                          {detailLoan.firstDueDate
+                            ? formatDate(detailLoan.firstDueDate)
+                            : (activeLoanInstallments[0]?.dueDate ? formatDate(activeLoanInstallments[0].dueDate) : 'Não informada')}
+                        </span>
+                      </div>
                       <div>
                         <span className="text-slate-400 block">Taxa Mensal</span>
                         <span className="font-bold text-slate-700 dark:text-slate-300">
@@ -549,16 +881,6 @@ export const EmprestimosModule: React.FC = () => {
                         <span className="text-slate-400 block">Valor Médio Parcela</span>
                         <span className="font-bold text-slate-700 dark:text-slate-300">
                           {formatCurrency(detailLoan.installmentAmount)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block">IOF Financiado</span>
-                        <span className="font-bold text-slate-700 dark:text-slate-300">{formatCurrency(detailLoan.iofAmount || 0)}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block">Seguro Financiado</span>
-                        <span className="font-bold text-slate-700 dark:text-slate-300">
-                          {formatCurrency(detailLoan.insuranceAmount || 0)}
                         </span>
                       </div>
                     </div>
@@ -590,10 +912,10 @@ export const EmprestimosModule: React.FC = () => {
                     <p className="text-xs text-slate-400 font-medium">
                       Exibindo{' '}
                       {
-                        detailLoan.installments.filter((i) => statusFilter === 'Todos' || i.status === statusFilter)
+                        activeLoanInstallments.filter((i) => statusFilter === 'Todos' || i.status === statusFilter)
                           .length
                       }{' '}
-                      de {detailLoan.installments.length} parcelas
+                      de {activeLoanInstallments.length} parcelas
                     </p>
                   </div>
 
@@ -607,7 +929,6 @@ export const EmprestimosModule: React.FC = () => {
                           <th className="p-3 text-right">Prestação</th>
                           <th className="p-3 text-right">Amortização</th>
                           <th className="p-3 text-right">Juros</th>
-                          <th className="p-3 text-right">IOF/Seguro</th>
                           <th className="p-3 text-right">Total Pago</th>
                           <th className="p-3 text-right">Saldo Devedor</th>
                           <th className="p-3 text-center">Situação</th>
@@ -615,20 +936,17 @@ export const EmprestimosModule: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                        {detailLoan.installments
+                        {activeLoanInstallments
                           .filter((i) => statusFilter === 'Todos' || i.status === statusFilter)
                           .map((inst) => (
                             <tr key={inst.number} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                               <td className="p-3 font-bold text-slate-800 dark:text-slate-200">{inst.number}</td>
-                              <td className="p-3 font-mono text-slate-600 dark:text-slate-400">{inst.dueDate}</td>
+                              <td className="p-3 font-mono text-slate-600 dark:text-slate-400">{formatDate(inst.dueDate)}</td>
                               <td className="p-3 text-right font-bold text-slate-900 dark:text-white">
                                 {formatCurrency(inst.amount)}
                               </td>
                               <td className="p-3 text-right text-blue-600 font-semibold">{formatCurrency(inst.principal)}</td>
                               <td className="p-3 text-right text-amber-600">{formatCurrency(inst.interest)}</td>
-                              <td className="p-3 text-right text-slate-400">
-                                {formatCurrency((inst.iof || 0) + (inst.insurance || 0))}
-                              </td>
                               <td className="p-3 text-right font-bold text-emerald-600">
                                 {formatCurrency(inst.paidAmount)}
                               </td>
@@ -815,7 +1133,7 @@ export const EmprestimosModule: React.FC = () => {
                       </h4>
                       <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={detailLoan.installments.slice(0, 48)}>
+                          <LineChart data={activeLoanInstallments.slice(0, 48)}>
                             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                             <XAxis dataKey="number" />
                             <YAxis tickFormatter={(v) => `R$${v / 1000}k`} />
@@ -841,7 +1159,7 @@ export const EmprestimosModule: React.FC = () => {
                       </h4>
                       <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={detailLoan.installments.slice(0, 24)}>
+                          <BarChart data={activeLoanInstallments.slice(0, 24)}>
                             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                             <XAxis dataKey="number" />
                             <YAxis tickFormatter={(v) => `R$${v}`} />
@@ -905,18 +1223,67 @@ export const EmprestimosModule: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Conta Bancária de Débito</label>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Origem do Pagamento (Conta Bancária ou Cartão)
+                </label>
                 <select
                   value={instBankId}
-                  onChange={(e) => setInstBankId(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
+                  onChange={(e) => {
+                    setInstBankId(e.target.value);
+                    setPaymentError(null);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-slate-100"
                 >
-                  {banks.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} (Saldo: {formatCurrency(b.currentBalance)})
-                    </option>
-                  ))}
+                  <optgroup label="🏦 Contas Bancárias (Saldo Disponível)">
+                    {banks.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} — Saldo: {formatCurrency(b.currentBalance)}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="💳 Cartões de Crédito (Limite Disponível)">
+                    {cards.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} — Limite Disp: {formatCurrency(c.limitAvailable)}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+
+                {(() => {
+                  const selBank = banks.find((b) => b.id === instBankId);
+                  const selCard = cards.find((c) => c.id === instBankId);
+                  const isPaidStatus = instNewStatus === 'Paga' || instNewStatus === 'Antecipada' || instNewStatus === 'Quitada';
+                  if (!isPaidStatus) return null;
+
+                  if (selBank) {
+                    const isInsufficient = selBank.currentBalance < instPaidAmountVal;
+                    return (
+                      <p
+                        className={`text-[11px] mt-1.5 font-semibold flex items-center gap-1 ${
+                          isInsufficient ? 'text-red-600 dark:text-red-400 font-bold' : 'text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        🏦 Saldo em {selBank.name}: {formatCurrency(selBank.currentBalance)}
+                        {isInsufficient && ' ⚠️ (Saldo insuficiente! O pagamento será rejeitado)'}
+                      </p>
+                    );
+                  }
+                  if (selCard) {
+                    const isInsufficient = selCard.limitAvailable < instPaidAmountVal;
+                    return (
+                      <p
+                        className={`text-[11px] mt-1.5 font-semibold flex items-center gap-1 ${
+                          isInsufficient ? 'text-red-600 dark:text-red-400 font-bold' : 'text-purple-600 dark:text-purple-400'
+                        }`}
+                      >
+                        💳 Limite Disponível no Cartão {selCard.name}: {formatCurrency(selCard.limitAvailable)}
+                        {isInsufficient && ' ⚠️ (Limite insuficiente! O pagamento será rejeitado)'}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
@@ -986,18 +1353,66 @@ export const EmprestimosModule: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Conta para Débito</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Forma de Pagamento (Conta Bancária ou Cartão)
+                    </label>
                     <select
                       value={payoffBankId}
-                      onChange={(e) => setPayoffBankId(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
+                      onChange={(e) => {
+                        setPayoffBankId(e.target.value);
+                        setPaymentError(null);
+                      }}
+                      className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-slate-100"
                     >
-                      {banks.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name} (Saldo: {formatCurrency(b.currentBalance)})
-                        </option>
-                      ))}
+                      <optgroup label="🏦 Contas Bancárias (Saldo Disponível)">
+                        {banks.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name} — Saldo: {formatCurrency(b.currentBalance)}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="💳 Cartões de Crédito (Limite Disponível)">
+                        {cards.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} — Limite Disp: {formatCurrency(c.limitAvailable)}
+                          </option>
+                        ))}
+                      </optgroup>
                     </select>
+
+                    {(() => {
+                      const selBank = banks.find((b) => b.id === payoffBankId);
+                      const selCard = cards.find((c) => c.id === payoffBankId);
+                      const requiredVal = details.payoffAmountDiscounted;
+
+                      if (selBank) {
+                        const isInsufficient = selBank.currentBalance < requiredVal;
+                        return (
+                          <p
+                            className={`text-[11px] mt-1.5 font-semibold flex items-center gap-1 ${
+                              isInsufficient ? 'text-red-600 dark:text-red-400 font-bold' : 'text-emerald-600 dark:text-emerald-400'
+                            }`}
+                          >
+                            🏦 Saldo em {selBank.name}: {formatCurrency(selBank.currentBalance)}
+                            {isInsufficient && ' ⚠️ (Saldo insuficiente: a quitação será rejeitada!)'}
+                          </p>
+                        );
+                      }
+                      if (selCard) {
+                        const isInsufficient = selCard.limitAvailable < requiredVal;
+                        return (
+                          <p
+                            className={`text-[11px] mt-1.5 font-semibold flex items-center gap-1 ${
+                              isInsufficient ? 'text-red-600 dark:text-red-400 font-bold' : 'text-purple-600 dark:text-purple-400'
+                            }`}
+                          >
+                            💳 Limite Disponível no Cartão {selCard.name}: {formatCurrency(selCard.limitAvailable)}
+                            {isInsufficient && ' ⚠️ (Limite insuficiente: a quitação será rejeitada!)'}
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
 
                   <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
@@ -1009,7 +1424,14 @@ export const EmprestimosModule: React.FC = () => {
                     </button>
                     <button
                       onClick={() => {
-                        earlyPayoffLoan(earlyPayoffLoanTarget.id, payoffUntilInstallment, payoffBankId);
+                        setPaymentError(null);
+                        setPaymentSuccess(null);
+                        const res = earlyPayoffLoan(earlyPayoffLoanTarget.id, payoffUntilInstallment, payoffBankId);
+                        if (!res.success) {
+                          setPaymentError(res.error || 'Quitação rejeitada.');
+                          return;
+                        }
+                        setPaymentSuccess('Quitação antecipada efetuada com sucesso! Saldo/limite atualizado.');
                         setEarlyPayoffLoanTarget(null);
                       }}
                       className="px-5 py-2 font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md"
@@ -1067,6 +1489,37 @@ export const EmprestimosModule: React.FC = () => {
                     onChange={(e) => setContractNumber(e.target.value)}
                     placeholder="Ex: CT-889410"
                     className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Loan Dates */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-blue-50/50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 rounded-xl">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                    Data do Empréstimo
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={contractDate}
+                    onChange={(e) => handleContractDateChange(e.target.value)}
+                    className="w-full p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                    Vencimento 1ª Parcela
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={firstDueDate}
+                    onChange={(e) => setFirstDueDate(e.target.value)}
+                    className="w-full p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
                   />
                 </div>
               </div>
@@ -1171,39 +1624,16 @@ export const EmprestimosModule: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">IOF (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={iofAmount || ''}
-                    onChange={(e) => setIofAmount(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Seguro (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={insuranceAmount || ''}
-                    onChange={(e) => setInsuranceAmount(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Encargos (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={feesAmount || ''}
-                    onChange={(e) => setFeesAmount(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
-                  />
-                </div>
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Encargos Adicionais (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={feesAmount || ''}
+                  onChange={(e) => setFeesAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                  placeholder="0.00"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1230,6 +1660,28 @@ export const EmprestimosModule: React.FC = () => {
                     onChange={(e) => setInstallmentsTotal(parseInt(e.target.value) || 1)}
                     className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
                   />
+                </div>
+              </div>
+
+              {/* Parcela Média Estimada Card */}
+              <div className="p-3.5 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="block text-xs font-bold text-purple-900 dark:text-purple-200">Parcela Média Estimada</span>
+                  <span className="text-[11px] text-purple-700 dark:text-purple-300">
+                    {amortizationSystem === 'SAC' && calculatedSchedule.length > 0
+                      ? `1ª: ${formatCurrency(calculatedSchedule[0]?.amount)} → Última: ${formatCurrency(calculatedSchedule[calculatedSchedule.length - 1]?.amount)}`
+                      : amortizationSystem === 'PRICE'
+                      ? 'Valor fixo mensal das parcelas'
+                      : 'Média estimada das parcelas'}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-lg font-black text-purple-700 dark:text-purple-300">
+                    {formatCurrency(averageInstallmentAmount)}
+                  </span>
+                  <span className="block text-[10px] text-purple-600 dark:text-purple-400 font-semibold">
+                    / mês ({installmentsTotal || 1}x)
+                  </span>
                 </div>
               </div>
 
@@ -1264,20 +1716,239 @@ export const EmprestimosModule: React.FC = () => {
         </div>
       )}
 
-      {/* Smart Delete Modal */}
+      {/* Extra Amortization Modal */}
+      {extraAmortModalLoan && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setExtraAmortModalLoan(null)}
+              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                <TrendingDown className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Realizar Amortização Extra</h3>
+                <p className="text-xs text-slate-500">
+                  {extraAmortModalLoan.customType || extraAmortModalLoan.type} • Saldo Atual: {formatCurrency(extraAmortModalLoan.outstandingBalance)}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Data do Aporte</label>
+                  <input
+                    type="date"
+                    value={extraAmortDate}
+                    onChange={(e) => setExtraAmortDate(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Valor da Amortização (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={1}
+                    value={extraAmortAmount}
+                    onChange={(e) => setExtraAmortAmount(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Objetivo da Amortização</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExtraAmortOption('prazo')}
+                    className={`p-3 rounded-xl border text-left font-bold transition-all ${
+                      extraAmortOption === 'prazo'
+                        ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-500 text-amber-800 dark:text-amber-200 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600'
+                    }`}
+                  >
+                    <p className="text-xs">Reduzir Prazo</p>
+                    <p className="text-[10px] font-normal text-slate-500 mt-0.5">Mantém o valor das parcelas e elimina meses finais</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setExtraAmortOption('parcela')}
+                    className={`p-3 rounded-xl border text-left font-bold transition-all ${
+                      extraAmortOption === 'parcela'
+                        ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-500 text-amber-800 dark:text-amber-200 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600'
+                    }`}
+                  >
+                    <p className="text-xs">Reduzir Parcela</p>
+                    <p className="text-[10px] font-normal text-slate-500 mt-0.5">Mantém o prazo total e reduz o valor mensal</p>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Forma de Pagamento (Conta Bancária ou Cartão)
+                </label>
+                <select
+                  value={extraAmortBankId}
+                  onChange={(e) => {
+                    setExtraAmortBankId(e.target.value);
+                    setPaymentError(null);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-slate-100"
+                >
+                  <optgroup label="🏦 Contas Bancárias (Saldo Disponível)">
+                    {banks.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} — Saldo: {formatCurrency(b.currentBalance)}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="💳 Cartões de Crédito (Limite Disponível)">
+                    {cards.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} — Limite Disp: {formatCurrency(c.limitAvailable)}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                {(() => {
+                  const selBank = banks.find((b) => b.id === extraAmortBankId);
+                  const selCard = cards.find((c) => c.id === extraAmortBankId);
+
+                  if (selBank) {
+                    const isInsufficient = selBank.currentBalance < extraAmortAmount;
+                    return (
+                      <p
+                        className={`text-[11px] mt-1.5 font-semibold flex items-center gap-1 ${
+                          isInsufficient ? 'text-red-600 dark:text-red-400 font-bold' : 'text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        🏦 Saldo em {selBank.name}: {formatCurrency(selBank.currentBalance)}
+                        {isInsufficient && ' ⚠️ (Saldo insuficiente: a amortização será rejeitada!)'}
+                      </p>
+                    );
+                  }
+                  if (selCard) {
+                    const isInsufficient = selCard.limitAvailable < extraAmortAmount;
+                    return (
+                      <p
+                        className={`text-[11px] mt-1.5 font-semibold flex items-center gap-1 ${
+                          isInsufficient ? 'text-red-600 dark:text-red-400 font-bold' : 'text-purple-600 dark:text-purple-400'
+                        }`}
+                      >
+                        💳 Limite Disponível no Cartão {selCard.name}: {formatCurrency(selCard.limitAvailable)}
+                        {isInsufficient && ' ⚠️ (Limite insuficiente: a amortização será rejeitada!)'}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+
+              {/* Economia Obtida Preview Report */}
+              {(() => {
+                const report = calculateExtraAmortizationDetails(
+                  extraAmortModalLoan,
+                  extraAmortAmount,
+                  extraAmortDate || getCurrentDateFormatted(),
+                  extraAmortOption
+                );
+
+                return (
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-2xl space-y-2">
+                    <h4 className="font-bold text-xs text-emerald-800 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      Relatório de Economia Obtida
+                    </h4>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs pt-1">
+                      <div>
+                        <span className="text-emerald-700 dark:text-emerald-400 block text-[10px]">Juros Originais Restantes</span>
+                        <span className="font-bold text-slate-700 dark:text-slate-300">{formatCurrency(report.originalFutureInterest)}</span>
+                      </div>
+                      <div>
+                        <span className="text-emerald-700 dark:text-emerald-400 block text-[10px]">Novos Juros Restantes</span>
+                        <span className="font-bold text-emerald-600">{formatCurrency(report.newFutureInterest)}</span>
+                      </div>
+                      <div>
+                        <span className="text-emerald-700 dark:text-emerald-400 block text-[10px]">Economia Total de Juros</span>
+                        <span className="font-black text-emerald-600 text-sm">+{formatCurrency(report.interestSaved)} ({report.savingsPercent}%)</span>
+                      </div>
+                      <div>
+                        <span className="text-emerald-700 dark:text-emerald-400 block text-[10px]">Nova Data/Prazo de Quitação</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-100">{report.newPayoffDate}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  onClick={() => setExtraAmortModalLoan(null)}
+                  className="px-4 py-2 font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    setPaymentError(null);
+                    setPaymentSuccess(null);
+                    const res = applyExtraAmortizationLoan(
+                      extraAmortModalLoan.id,
+                      extraAmortAmount,
+                      extraAmortDate,
+                      extraAmortOption,
+                      extraAmortBankId
+                    );
+                    if (!res.success) {
+                      setPaymentError(res.error || 'Amortização extra rejeitada.');
+                      return;
+                    }
+                    setPaymentSuccess('Amortização extra realizada com sucesso! Saldo/limite atualizado.');
+                    setExtraAmortModalLoan(null);
+                    if (detailLoan?.id === extraAmortModalLoan.id) {
+                      const refreshed = useFinancialStore.getState().loans.find((l) => l.id === extraAmortModalLoan.id);
+                      if (refreshed) setDetailLoan(refreshed);
+                    }
+                  }}
+                  className="px-5 py-2 font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-md"
+                >
+                  Confirmar Amortização
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single Delete Modal */}
       {deleteItemTarget && (
         <SmartDeleteModal
           isOpen={!!deleteItemTarget}
           onClose={() => setDeleteItemTarget(null)}
           onConfirm={() => {
             deleteLoanSmart(deleteItemTarget.id);
+            if (detailLoan?.id === deleteItemTarget.id) setDetailLoan(null);
             setDeleteItemTarget(null);
           }}
-          title={`Excluir / Encerrar Empréstimo (${deleteItemTarget.type})`}
+          title={`Excluir Empréstimo (${deleteItemTarget.customType || deleteItemTarget.type})`}
           description={
             deleteItemTarget.installmentsPaid > 0
-              ? 'Este empréstimo possui parcelas pagas! Ele não será excluído para preservar o histórico contábil, mas o status será alterado para Encerrado.'
-              : 'Deseja mover este empréstimo não iniciado para a lixeira?'
+              ? 'Atenção: Este empréstimo possui parcelas pagas! Ao confirmar a exclusão, o contrato e seu histórico serão removidos do sistema e os relatórios financeiros recalculados.'
+              : 'Deseja excluir este empréstimo e seu contrato definitivamente?'
           }
         />
       )}

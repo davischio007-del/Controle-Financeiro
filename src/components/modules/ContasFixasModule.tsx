@@ -163,18 +163,25 @@ export const ContasFixasModule: React.FC = () => {
     {
       header: 'Status',
       accessor: (r) => (
-        <span
-          className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 w-fit ${
+        <button
+          onClick={() =>
+            updateFixedExpense(r.id, {
+              status: r.status === 'Pago' ? 'Pendente' : 'Pago',
+              lastPaidDate: r.status === 'Pago' ? undefined : new Date().toISOString().split('T')[0],
+            })
+          }
+          title="Clique para alternar o status de pagamento"
+          className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 w-fit transition-transform hover:scale-105 ${
             r.status === 'Pago'
-              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 hover:bg-emerald-200'
               : r.status === 'Atrasado'
-              ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
-              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+              ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300 hover:bg-red-200'
+              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 hover:bg-amber-200'
           }`}
         >
           {r.status === 'Pago' ? <CheckCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
           {r.status}
-        </span>
+        </button>
       ),
     },
     {

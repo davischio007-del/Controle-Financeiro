@@ -126,15 +126,6 @@ export const LoginModal: React.FC = () => {
           </button>
         </form>
 
-        {/* Credentials Info Box */}
-        <div className="mt-5 p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 rounded-xl text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
-          <p className="font-bold text-slate-700 dark:text-slate-300">Acesso de Demonstração:</p>
-          <div className="flex items-center justify-between text-[10px] bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 font-mono">
-            <span>Admin: <strong>davischio</strong></span>
-            <span>Senha: <strong>Snoop123@</strong></span>
-          </div>
-        </div>
-
         {/* Forgot Password Modal */}
         {showForgotPassword && (
           <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">

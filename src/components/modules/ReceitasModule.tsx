@@ -37,7 +37,7 @@ export const ReceitasModule: React.FC = () => {
     setDescription('');
     setCategoryId(categories.find((c) => c.type === 'Receita')?.id || categories[0]?.id || '');
     setSubcategoryId('');
-    setBankId(banks[0]?.id || '');
+    setBankId('');
     setAmount(0);
     setDate(getCurrentDateFormatted());
     setIsRecurring(false);
@@ -51,7 +51,7 @@ export const ReceitasModule: React.FC = () => {
     setDescription(item.description);
     setCategoryId(item.categoryId);
     setSubcategoryId(item.subcategoryId || '');
-    setBankId(item.bankId);
+    setBankId(item.bankId || '');
     setAmount(item.amount);
     setDate(item.date);
     setIsRecurring(item.isRecurring);
@@ -81,7 +81,7 @@ export const ReceitasModule: React.FC = () => {
         description,
         categoryId,
         subcategoryId: subcategoryId || undefined,
-        bankId,
+        bankId: bankId || undefined,
         amount,
         date,
         isRecurring,
@@ -93,7 +93,7 @@ export const ReceitasModule: React.FC = () => {
         description,
         categoryId,
         subcategoryId: subcategoryId || undefined,
-        bankId,
+        bankId: bankId || undefined,
         amount,
         date,
         isRecurring,
@@ -134,8 +134,11 @@ export const ReceitasModule: React.FC = () => {
     {
       header: 'Conta Bancária',
       accessor: (r) => {
+        if (!r.bankId) {
+          return <span className="font-medium text-slate-400 dark:text-slate-500 italic">Espécie / Sem conta</span>;
+        }
         const b = banks.find((bk) => bk.id === r.bankId);
-        return <span className="font-medium text-slate-700 dark:text-slate-300">{b?.name || '-'}</span>;
+        return <span className="font-medium text-slate-700 dark:text-slate-300">{b ? b.name : '-'}</span>;
       },
     },
     {
@@ -233,13 +236,13 @@ export const ReceitasModule: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Conta Bancária</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Conta Bancária (Opcional)</label>
                   <select
-                    required
                     value={bankId}
                     onChange={(e) => setBankId(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
+                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium"
                   >
+                    <option value="">Nenhuma (Dinheiro em Espécie / Outro)</option>
                     {banks.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name} ({b.institution})

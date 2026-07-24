@@ -64,6 +64,38 @@ export function verifyPassword(password: string, hash: string): boolean {
 }
 
 // Amortization Calculators (PRICE / SAC / Personalizado)
+function parseBaseDate(startDateStr?: string): Date {
+  if (!startDateStr) return new Date();
+  const clean = startDateStr.split('T')[0];
+  const parts = clean.split('-').map(Number);
+  if (parts.length === 3 && !isNaN(parts[0]) && parts[0] >= 1990) {
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  const d = new Date(startDateStr);
+  if (isNaN(d.getTime()) || d.getFullYear() < 1990) {
+    return new Date();
+  }
+  return d;
+}
+
+function formatYYYYMMDD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getMonthlyDueDate(baseDate: Date, monthOffset: number): Date {
+  const targetYear = baseDate.getFullYear();
+  const targetMonth = baseDate.getMonth() + monthOffset;
+  const targetDay = baseDate.getDate();
+  const d = new Date(targetYear, targetMonth, targetDay);
+  if (d.getDate() !== targetDay) {
+    return new Date(targetYear, targetMonth + 1, 0);
+  }
+  return d;
+}
+
 export function calculatePRICESchedule(
   principal: number,
   monthlyRatePercent: number,
@@ -71,7 +103,8 @@ export function calculatePRICESchedule(
   startDateStr: string,
   iofTotal: number = 0,
   insuranceTotal: number = 0,
-  feesTotal: number = 0
+  feesTotal: number = 0,
+  firstDueDateStr?: string
 ): LoanInstallment[] {
   const i = monthlyRatePercent / 100;
   const p = principal;
@@ -90,7 +123,8 @@ export function calculatePRICESchedule(
 
   const installments: LoanInstallment[] = [];
   let remaining = p;
-  const startDate = new Date(startDateStr || Date.now());
+  const useFirstDue = !!firstDueDateStr;
+  const baseDate = parseBaseDate(firstDueDateStr || startDateStr);
 
   for (let step = 1; step <= n; step++) {
     const interest = remaining * i;
@@ -99,12 +133,13 @@ export function calculatePRICESchedule(
 
     const totalInstallmentVal = pmt + perInstallmentIof + perInstallmentInsurance + perInstallmentFees;
 
-    const dueDate = new Date(startDate);
-    dueDate.setMonth(dueDate.getMonth() + step);
+    const dueDate = useFirstDue
+      ? getMonthlyDueDate(baseDate, step - 1)
+      : getMonthlyDueDate(baseDate, step);
 
     installments.push({
       number: step,
-      dueDate: dueDate.toISOString().split('T')[0],
+      dueDate: formatYYYYMMDD(dueDate),
       amount: Math.round(totalInstallmentVal * 100) / 100,
       principal: Math.round(principalPaid * 100) / 100,
       interest: Math.round(interest * 100) / 100,
@@ -127,7 +162,8 @@ export function calculateSACSchedule(
   startDateStr: string,
   iofTotal: number = 0,
   insuranceTotal: number = 0,
-  feesTotal: number = 0
+  feesTotal: number = 0,
+  firstDueDateStr?: string
 ): LoanInstallment[] {
   const i = monthlyRatePercent / 100;
   const p = principal;
@@ -140,19 +176,21 @@ export function calculateSACSchedule(
 
   const installments: LoanInstallment[] = [];
   let remaining = p;
-  const startDate = new Date(startDateStr || Date.now());
+  const useFirstDue = !!firstDueDateStr;
+  const baseDate = parseBaseDate(firstDueDateStr || startDateStr);
 
   for (let step = 1; step <= n; step++) {
     const interest = remaining * i;
     const totalInstallmentVal = amort + interest + perInstallmentIof + perInstallmentInsurance + perInstallmentFees;
     remaining = Math.max(0, remaining - amort);
 
-    const dueDate = new Date(startDate);
-    dueDate.setMonth(dueDate.getMonth() + step);
+    const dueDate = useFirstDue
+      ? getMonthlyDueDate(baseDate, step - 1)
+      : getMonthlyDueDate(baseDate, step);
 
     installments.push({
       number: step,
-      dueDate: dueDate.toISOString().split('T')[0],
+      dueDate: formatYYYYMMDD(dueDate),
       amount: Math.round(totalInstallmentVal * 100) / 100,
       principal: Math.round(amort * 100) / 100,
       interest: Math.round(interest * 100) / 100,
@@ -175,9 +213,9 @@ export function calculateCustomSchedule(
   startDateStr: string,
   iofTotal: number = 0,
   insuranceTotal: number = 0,
-  feesTotal: number = 0
+  feesTotal: number = 0,
+  firstDueDateStr?: string
 ): LoanInstallment[] {
-  // Personalizado: Amortização linear com juros simples distribuídos igualmente
   const p = principal;
   const n = Math.max(1, totalInstallments);
   const amort = p / n;
@@ -189,18 +227,20 @@ export function calculateCustomSchedule(
 
   const installments: LoanInstallment[] = [];
   let remaining = p;
-  const startDate = new Date(startDateStr || Date.now());
+  const useFirstDue = !!firstDueDateStr;
+  const baseDate = parseBaseDate(firstDueDateStr || startDateStr);
 
   for (let step = 1; step <= n; step++) {
     const totalInstallmentVal = amort + perInstallmentInterest + perInstallmentIof + perInstallmentInsurance + perInstallmentFees;
     remaining = Math.max(0, remaining - amort);
 
-    const dueDate = new Date(startDate);
-    dueDate.setMonth(dueDate.getMonth() + step);
+    const dueDate = useFirstDue
+      ? getMonthlyDueDate(baseDate, step - 1)
+      : getMonthlyDueDate(baseDate, step);
 
     installments.push({
       number: step,
-      dueDate: dueDate.toISOString().split('T')[0],
+      dueDate: formatYYYYMMDD(dueDate),
       amount: Math.round(totalInstallmentVal * 100) / 100,
       principal: Math.round(amort * 100) / 100,
       interest: Math.round(perInstallmentInterest * 100) / 100,
@@ -217,6 +257,258 @@ export function calculateCustomSchedule(
 }
 
 // Early Payoff / Quitação Antecipada Calculation
+// Invoice Closing Date Helper Rule
+export function getInvoiceCompetence(
+  purchaseDateStr: string,
+  closingDay: number
+): { month: number; year: number; competenceStr: string } {
+  if (!purchaseDateStr) {
+    const now = new Date();
+    return {
+      month: now.getMonth() + 1,
+      year: now.getFullYear(),
+      competenceStr: `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`,
+    };
+  }
+
+  const parts = purchaseDateStr.split('T')[0].split('-');
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const day = parseInt(parts[2], 10);
+
+  let targetMonth = month;
+  let targetYear = year;
+
+  // Purchases made AFTER closingDay belong automatically to the next invoice
+  if (day > closingDay) {
+    targetMonth += 1;
+    if (targetMonth > 12) {
+      targetMonth = 1;
+      targetYear += 1;
+    }
+  }
+
+  const compStr = `${String(targetMonth).padStart(2, '0')}/${targetYear}`;
+  return { month: targetMonth, year: targetYear, competenceStr: compStr };
+}
+
+// Calculate competence for specific installment index (1-indexed)
+export function getInstallmentCompetence(
+  purchaseDateStr: string,
+  closingDay: number,
+  installmentIndex: number = 1
+): { month: number; year: number; competenceStr: string } {
+  const baseComp = getInvoiceCompetence(purchaseDateStr, closingDay);
+  const totalMonths = (baseComp.month - 1) + (installmentIndex - 1);
+  const targetMonth = (totalMonths % 12) + 1;
+  const targetYear = baseComp.year + Math.floor(totalMonths / 12);
+  const competenceStr = `${String(targetMonth).padStart(2, '0')}/${targetYear}`;
+  return { month: targetMonth, year: targetYear, competenceStr };
+}
+
+// Calculate exact installment amounts ensuring sum(amounts) === totalAmount without penny rounding drift
+export function calculateInstallmentAmounts(totalAmount: number, count: number): number[] {
+  if (count <= 1) return [Math.round(totalAmount * 100) / 100];
+  const totalCents = Math.round(totalAmount * 100);
+  const baseCents = Math.floor(totalCents / count);
+  const remainderCents = totalCents - (baseCents * count);
+
+  const result: number[] = [];
+  for (let i = 0; i < count; i++) {
+    // Add 1 cent to the first 'remainderCents' installments
+    const cents = baseCents + (i < remainderCents ? 1 : 0);
+    result.push(cents / 100);
+  }
+  return result;
+}
+
+// Early Payoff / Quitação Antecipada & Extra Amortization Calculation
+export function calculateExtraAmortizationDetails(
+  loan: Loan,
+  extraAmount: number,
+  extraDate: string,
+  mode: 'reduce_term' | 'reduce_installment' | 'prazo' | 'parcela'
+) {
+  const isReduceTerm = mode === 'reduce_term' || mode === 'prazo';
+
+  // Ensure we have complete schedule
+  let baseSchedule = loan.installments || [];
+  if (baseSchedule.length === 0 || !baseSchedule[0]?.principal) {
+    const startDate = loan.contractDate || getCurrentDateFormatted();
+    if (loan.amortizationSystem === 'SAC') {
+      baseSchedule = calculateSACSchedule(
+        loan.contractedAmount || 0,
+        loan.interestRateMonthly || 0,
+        loan.installmentsTotal || 12,
+        startDate,
+        loan.iofAmount || 0,
+        loan.insuranceAmount || 0,
+        loan.feesAmount || 0,
+        loan.firstDueDate
+      );
+    } else if (loan.amortizationSystem === 'Personalizado') {
+      baseSchedule = calculateCustomSchedule(
+        loan.contractedAmount || 0,
+        loan.interestRateMonthly || 0,
+        loan.installmentsTotal || 12,
+        startDate,
+        loan.iofAmount || 0,
+        loan.insuranceAmount || 0,
+        loan.feesAmount || 0,
+        loan.firstDueDate
+      );
+    } else {
+      baseSchedule = calculatePRICESchedule(
+        loan.contractedAmount || 0,
+        loan.interestRateMonthly || 0,
+        loan.installmentsTotal || 12,
+        startDate,
+        loan.iofAmount || 0,
+        loan.insuranceAmount || 0,
+        loan.feesAmount || 0,
+        loan.firstDueDate
+      );
+    }
+  }
+
+  const pendingInsts = baseSchedule.filter(
+    (inst) => inst.status !== 'Paga' && inst.status !== 'Antecipada' && inst.status !== 'Quitada'
+  );
+
+  const originalFutureInterest = pendingInsts.reduce((acc, i) => acc + (i.interest || 0), 0);
+  const currentOutstanding = loan.outstandingBalance > 0 ? loan.outstandingBalance : pendingInsts.reduce((acc, i) => acc + (i.principal || 0), 0);
+
+  const newBalance = Math.max(0, currentOutstanding - extraAmount);
+
+  if (newBalance <= 0) {
+    // Fully quitado
+    return {
+      newBalance: 0,
+      newInstallmentCount: 0,
+      newInstallmentAmount: 0,
+      originalFutureInterest: Math.round(originalFutureInterest * 100) / 100,
+      newFutureInterest: 0,
+      interestSaved: Math.round(originalFutureInterest * 100) / 100,
+      savingsPercent: 100,
+      newPayoffDate: extraDate || getCurrentDateFormatted(),
+      newInstallments: baseSchedule.map((inst) => {
+        if (inst.status !== 'Paga' && inst.status !== 'Antecipada' && inst.status !== 'Quitada') {
+          return {
+            ...inst,
+            status: 'Quitada' as const,
+            paidAmount: inst.principal || inst.amount,
+            paidDate: extraDate || getCurrentDateFormatted(),
+            remainingBalance: 0,
+          };
+        }
+        return inst;
+      }),
+    };
+  }
+
+  let updatedInstallments = baseSchedule.map((i) => ({ ...i }));
+  let interestSaved = 0;
+  let newInstallmentAmount = loan.installmentAmount;
+
+  if (isReduceTerm) {
+    // Reduzir Prazo: Abater das parcelas finais (start from the last pending installment going backwards)
+    let remExtra = extraAmount;
+    const pendingIndices: number[] = [];
+    for (let idx = updatedInstallments.length - 1; idx >= 0; idx--) {
+      const st = updatedInstallments[idx].status;
+      if (st !== 'Paga' && st !== 'Antecipada' && st !== 'Quitada') {
+        pendingIndices.push(idx);
+      }
+    }
+
+    for (const idx of pendingIndices) {
+      if (remExtra <= 0) break;
+      const inst = updatedInstallments[idx];
+      const instP = (inst.principal && inst.principal > 0) ? inst.principal : inst.amount;
+
+      if (remExtra >= instP) {
+        // Abate integralmente a parcela final
+        remExtra -= instP;
+        interestSaved += (inst.interest || 0);
+        updatedInstallments[idx] = {
+          ...inst,
+          status: 'Antecipada',
+          paidAmount: instP,
+          paidDate: extraDate || getCurrentDateFormatted(),
+          remainingBalance: 0,
+        };
+      } else {
+        // Abate parcialmente a parcela final
+        const newP = Math.max(0, instP - remExtra);
+        const ratio = instP > 0 ? newP / instP : 0;
+        const newInt = Math.round((inst.interest || 0) * ratio * 100) / 100;
+        interestSaved += ((inst.interest || 0) - newInt);
+        remExtra = 0;
+        updatedInstallments[idx] = {
+          ...inst,
+          principal: Math.round(newP * 100) / 100,
+          amount: Math.round((newP + newInt) * 100) / 100,
+          interest: newInt,
+        };
+      }
+    }
+    // Parcela mensal permanece inalterada na redução de prazo
+    newInstallmentAmount = loan.installmentAmount;
+  } else {
+    // Reduzir Parcela: Mantém a quantidade de parcelas e reduz o valor da PMT futura
+    const nRem = Math.max(1, pendingInsts.length);
+    const i = (loan.interestRateMonthly || 1.4) / 100;
+    let newPmt = 0;
+    if (i === 0) {
+      newPmt = newBalance / nRem;
+    } else {
+      newPmt = (newBalance * (i * Math.pow(1 + i, nRem))) / (Math.pow(1 + i, nRem) - 1);
+    }
+    newInstallmentAmount = Math.round(newPmt * 100) / 100;
+
+    let remP = newBalance;
+    updatedInstallments = updatedInstallments.map((inst) => {
+      if (inst.status !== 'Paga' && inst.status !== 'Antecipada' && inst.status !== 'Quitada') {
+        const interest = Math.round(remP * i * 100) / 100;
+        const principalPaid = Math.min(remP, Math.max(0, newPmt - interest));
+        remP = Math.max(0, remP - principalPaid);
+        return {
+          ...inst,
+          amount: newInstallmentAmount,
+          principal: Math.round(principalPaid * 100) / 100,
+          interest: interest,
+          remainingBalance: Math.round(remP * 100) / 100,
+        };
+      }
+      return inst;
+    });
+
+    const newFutureInterest = updatedInstallments
+      .filter((inst) => inst.status !== 'Paga' && inst.status !== 'Antecipada' && inst.status !== 'Quitada')
+      .reduce((acc, inst) => acc + (inst.interest || 0), 0);
+    interestSaved = Math.max(0, originalFutureInterest - newFutureInterest);
+  }
+
+  const activeRemaining = updatedInstallments.filter(
+    (inst) => inst.status !== 'Paga' && inst.status !== 'Antecipada' && inst.status !== 'Quitada'
+  );
+
+  const lastRemaining = activeRemaining[activeRemaining.length - 1];
+  const newPayoffDate = lastRemaining ? lastRemaining.dueDate : (extraDate || getCurrentDateFormatted());
+
+  return {
+    newBalance: Math.round(newBalance * 100) / 100,
+    newInstallmentCount: activeRemaining.length,
+    newInstallmentAmount: isReduceTerm ? loan.installmentAmount : Math.round(newInstallmentAmount * 100) / 100,
+    originalFutureInterest: Math.round(originalFutureInterest * 100) / 100,
+    newFutureInterest: Math.round(Math.max(0, originalFutureInterest - interestSaved) * 100) / 100,
+    interestSaved: Math.round(interestSaved * 100) / 100,
+    savingsPercent: originalFutureInterest > 0 ? Math.round((interestSaved / originalFutureInterest) * 10000) / 100 : 0,
+    newPayoffDate,
+    newInstallments: updatedInstallments,
+  };
+}
+
 export function calculateEarlyPayoffDetails(loan: Loan, payUntilInstallment: number) {
   const unpaidInstallments = loan.installments.filter(
     (inst) => inst.number > payUntilInstallment && inst.status !== 'Paga' && inst.status !== 'Antecipada' && inst.status !== 'Quitada'

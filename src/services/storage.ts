@@ -32,7 +32,10 @@ import {
   calculateSACSchedule,
   calculateCustomSchedule,
   getCurrentDateFormatted,
+  calculateExtraAmortizationDetails,
+  getInvoiceCompetence,
 } from '../lib/utils';
+import { recalculateAllBankBalances } from '../utils/bankUtils';
 
 // Helper full permissions object
 export const FULL_MODULE_PERMISSIONS = {
@@ -317,6 +320,66 @@ const INITIAL_VARIABLE_EXPENSES: VariableExpense[] = [
     archived: false,
   },
   {
+    id: 'var_apple_store',
+    description: 'Assinatura Apple Services & iCloud',
+    categoryId: 'cat_outros',
+    subcategoryId: 'sub_internet',
+    amount: 350.00,
+    date: '2026-07-12',
+    paymentMethod: 'Cartão',
+    cardId: 'card_nubank_uv',
+    status: 'Pago',
+    archived: false,
+  },
+  {
+    id: 'var_supermercado_pao_acucar',
+    description: 'Hortifruti & Orgânicos Pão de Açúcar',
+    categoryId: 'cat_mercado',
+    subcategoryId: 'sub_supermercado',
+    amount: 860.00,
+    date: '2026-07-14',
+    paymentMethod: 'Cartão',
+    cardId: 'card_nubank_uv',
+    status: 'Pago',
+    archived: false,
+  },
+  {
+    id: 'var_restaurante_outback',
+    description: 'Jantar Executivo Outback Steakhouse',
+    categoryId: 'cat_mercado',
+    subcategoryId: 'sub_restaurante',
+    amount: 420.00,
+    date: '2026-07-15',
+    paymentMethod: 'Cartão',
+    cardId: 'card_nubank_uv',
+    status: 'Pago',
+    archived: false,
+  },
+  {
+    id: 'var_posto_gasolina',
+    description: 'Abastecimento Ipiranga Grid',
+    categoryId: 'cat_transporte',
+    subcategoryId: 'sub_combustivel',
+    amount: 280.00,
+    date: '2026-07-16',
+    paymentMethod: 'Cartão',
+    cardId: 'card_nubank_uv',
+    status: 'Pago',
+    archived: false,
+  },
+  {
+    id: 'var_farmacia_drogasil',
+    description: 'Medicamentos & Cuidados Drogasil',
+    categoryId: 'cat_saude',
+    subcategoryId: 'sub_farmacia',
+    amount: 300.00,
+    date: '2026-07-17',
+    paymentMethod: 'Cartão',
+    cardId: 'card_nubank_uv',
+    status: 'Pago',
+    archived: false,
+  },
+  {
     id: 'var_combustivel_posto',
     description: 'Abastecimento Posto Shell V-Power',
     categoryId: 'cat_transporte',
@@ -328,10 +391,61 @@ const INITIAL_VARIABLE_EXPENSES: VariableExpense[] = [
     status: 'Pago',
     archived: false,
   },
+  {
+    id: 'var_passagem_aerea_latam',
+    description: 'Passagens Aéreas Latam Brasil',
+    categoryId: 'cat_lazer',
+    subcategoryId: 'sub_freelance',
+    amount: 1850.00,
+    date: '2026-07-08',
+    paymentMethod: 'Cartão',
+    cardId: 'card_itau_personnalite',
+    status: 'Pago',
+    archived: false,
+    installmentsCount: 3,
+    currentInstallment: 1,
+    installmentAmount: 616.66,
+  },
+  {
+    id: 'var_hotel_pousada',
+    description: 'Reserva Hospedagem Booking.com',
+    categoryId: 'cat_lazer',
+    subcategoryId: 'sub_freelance',
+    amount: 920.00,
+    date: '2026-07-11',
+    paymentMethod: 'Cartão',
+    cardId: 'card_itau_personnalite',
+    status: 'Pago',
+    archived: false,
+  },
+  {
+    id: 'var_vestuario_zara',
+    description: 'Roupas & Acessórios Zara Shopping',
+    categoryId: 'cat_outros',
+    subcategoryId: 'sub_freelance',
+    amount: 480.00,
+    date: '2026-07-13',
+    paymentMethod: 'Cartão',
+    cardId: 'card_itau_personnalite',
+    status: 'Pago',
+    archived: false,
+  },
+  {
+    id: 'var_uber_viagens',
+    description: 'Corridas Executivas Uber',
+    categoryId: 'cat_transporte',
+    subcategoryId: 'sub_combustivel',
+    amount: 300.00,
+    date: '2026-07-19',
+    paymentMethod: 'Cartão',
+    cardId: 'card_itau_personnalite',
+    status: 'Pago',
+    archived: false,
+  },
 ];
 
 // Seed Loans (PRICE and SAC)
-const PRICE_INST = calculatePRICESchedule(30000, 1.4, 48, '2025-06-01', 450, 250);
+const PRICE_INST = calculatePRICESchedule(30000, 1.4, 48, '2025-06-01', 0, 0);
 PRICE_INST.forEach((inst) => {
   if (inst.number <= 12) {
     inst.status = 'Paga';
@@ -340,7 +454,7 @@ PRICE_INST.forEach((inst) => {
   }
 });
 
-const SAC_INST = calculateSACSchedule(250000, 1.1, 360, '2024-06-01', 1200, 800);
+const SAC_INST = calculateSACSchedule(250000, 1.1, 360, '2024-06-01', 0, 0);
 SAC_INST.forEach((inst) => {
   if (inst.number <= 24) {
     inst.status = 'Paga';
@@ -356,12 +470,12 @@ const INITIAL_LOANS: Loan[] = [
     contractNumber: 'CT-889410-2025',
     type: 'Consignado',
     contractedAmount: 30000,
-    netAmountReceived: 29300,
+    netAmountReceived: 30000,
     interestRateMonthly: 1.4,
     interestRateYearly: 18.16,
     cetRateYearly: 19.80,
-    iofAmount: 450,
-    insuranceAmount: 250,
+    iofAmount: 0,
+    insuranceAmount: 0,
     feesAmount: 0,
     amortizationSystem: 'PRICE',
     installmentsTotal: 48,
@@ -373,8 +487,8 @@ const INITIAL_LOANS: Loan[] = [
     paidAmortization: 6050.40,
     status: 'Ativo',
     consignadoDetails: {
-      iofTotal: 450,
-      insuranceTotal: 250,
+      iofTotal: 0,
+      insuranceTotal: 0,
       monthlyFee: 15,
     },
     installments: PRICE_INST,
@@ -387,12 +501,12 @@ const INITIAL_LOANS: Loan[] = [
     type: 'Financiamento',
     customType: 'Financiamento Imobiliário',
     contractedAmount: 250000,
-    netAmountReceived: 248000,
+    netAmountReceived: 250000,
     interestRateMonthly: 1.1,
     interestRateYearly: 14.03,
     cetRateYearly: 15.20,
-    iofAmount: 1200,
-    insuranceAmount: 800,
+    iofAmount: 0,
+    insuranceAmount: 0,
     feesAmount: 0,
     amortizationSystem: 'SAC',
     installmentsTotal: 360,
@@ -541,6 +655,7 @@ interface FinancialStore {
   resetUserPassword: (id: string, newPass: string) => void;
 
   // Actions - Banks
+  recalculateBankBalances: () => void;
   addBank: (bank: Omit<Bank, 'id' | 'updatedAt' | 'archived'>) => void;
   updateBank: (id: string, updates: Partial<Bank>) => void;
   deleteBankSmart: (id: string, mode: 'transfer' | 'deactivate' | 'delete', targetBankId?: string) => void;
@@ -577,15 +692,31 @@ interface FinancialStore {
   addLoan: (loan: Omit<Loan, 'id' | 'archived'>) => void;
   updateLoan: (id: string, updates: Partial<Loan>) => void;
   deleteLoanSmart: (id: string) => boolean;
-  payLoanInstallment: (loanId: string, installmentNumber: number, fromBankId: string) => void;
+  payLoanInstallment: (
+    loanId: string,
+    installmentNumber: number,
+    paymentSourceId?: string
+  ) => { success: boolean; error?: string };
   updateLoanInstallmentStatus: (
     loanId: string,
     installmentNumber: number,
     newStatus: InstallmentStatus,
     paidAmountVal?: number,
-    fromBankId?: string
-  ) => void;
-  earlyPayoffLoan: (loanId: string, payUntilInstallment: number, fromBankId: string) => void;
+    paymentSourceId?: string
+  ) => { success: boolean; error?: string };
+  earlyPayoffLoan: (
+    loanId: string,
+    payUntilInstallment: number,
+    paymentSourceId?: string
+  ) => { success: boolean; error?: string };
+  applyExtraAmortizationLoan: (
+    loanId: string,
+    extraAmount: number,
+    extraDate: string,
+    mode: 'reduce_term' | 'reduce_installment',
+    paymentSourceId?: string
+  ) => { success: boolean; error?: string };
+  deleteLoan: (id: string) => void;
 
   // Actions - Investments
   addInvestment: (inv: Omit<Investment, 'id' | 'archived' | 'transactions'>) => void;
@@ -594,6 +725,7 @@ interface FinancialStore {
   depositInvestment: (investmentId: string, amount: number, fromBankId: string) => void;
   withdrawInvestment: (investmentId: string, amount: number, toBankId: string) => void;
   deleteInvestment: (id: string) => void;
+  recalculateInvestmentYields: (marketRates?: { cdi?: number; selic?: number; ipca?: number }) => void;
 
   // Actions - Goals
   addGoal: (goal: Omit<Goal, 'id' | 'archived'>) => void;
@@ -723,30 +855,12 @@ export const useFinancialStore = create<FinancialStore>()(
         get().logAudit('usuarios', 'Alteração', `Usuário ${oldUser?.username} atualizado`, JSON.stringify(oldUser), JSON.stringify(updates));
       },
 
-      deleteUser: (id, permanent) => {
+      deleteUser: (id) => {
         const user = get().users.find((u) => u.id === id);
         if (!user) return;
         deleteDocFromFirestore('users', id);
-        if (permanent) {
-          set((state) => ({ users: state.users.filter((u) => u.id !== id) }));
-          get().logAudit('usuarios', 'Exclusão', `Usuário ${user.username} excluído definitivamente`);
-        } else {
-          // Add to trash bin
-          const trash: TrashItem = {
-            id: `trash_${Date.now()}`,
-            originalId: id,
-            module: 'usuarios',
-            itemTitle: user.name,
-            originalData: user,
-            deletedAt: new Date().toISOString(),
-            deletedBy: get().currentUser?.username || 'Sistema',
-          };
-          set((state) => ({
-            users: state.users.filter((u) => u.id !== id),
-            trashBin: [trash, ...state.trashBin],
-          }));
-          get().logAudit('usuarios', 'Exclusão', `Usuário ${user.username} movido para a lixeira`);
-        }
+        set((state) => ({ users: state.users.filter((u) => u.id !== id) }));
+        get().logAudit('usuarios', 'Exclusão', `Usuário ${user.username} excluído definitivamente`);
       },
 
       resetUserPassword: (id, newPass) => {
@@ -760,6 +874,12 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       // Banks
+      recalculateBankBalances: () => {
+        const updatedBanks = recalculateAllBankBalances(get());
+        set({ banks: updatedBanks });
+        updatedBanks.forEach((b) => saveDocToFirestore('banks', b));
+      },
+
       addBank: (bankData) => {
         const newBank: Bank = {
           ...bankData,
@@ -769,6 +889,7 @@ export const useFinancialStore = create<FinancialStore>()(
         };
         set((state) => ({ banks: [...state.banks, newBank] }));
         saveDocToFirestore('banks', newBank);
+        get().recalculateBankBalances();
         get().logAudit('bancos', 'Inclusão', `Banco ${newBank.name} cadastrado com saldo R$ ${newBank.initialBalance}`);
       },
 
@@ -778,7 +899,10 @@ export const useFinancialStore = create<FinancialStore>()(
         set((state) => ({
           banks: state.banks.map((b) => (b.id === id ? (updated as Bank) : b)),
         }));
-        if (updated) saveDocToFirestore('banks', updated);
+        if (updated) {
+          saveDocToFirestore('banks', updated);
+          get().recalculateBankBalances();
+        }
         get().logAudit('bancos', 'Alteração', `Dados do banco ID ${id} atualizados`);
       },
 
@@ -801,23 +925,15 @@ export const useFinancialStore = create<FinancialStore>()(
             variableExpenses: state.variableExpenses.map((v) => (v.bankId === id ? { ...v, bankId: targetBankId } : v)),
             banks: state.banks.filter((b) => b.id !== id),
           }));
-          get().logAudit('bancos', 'Exclusão', `Banco ${bank.name} removido e movimentações transferidas para o banco ID ${targetBankId}`);
-        } else if (mode === 'delete') {
+          get().recalculateBankBalances();
+          get().logAudit('bancos', 'Exclusão', `Banco ${bank.name} removido definitivamente e movimentações transferidas para o banco ID ${targetBankId}`);
+        } else {
           deleteDocFromFirestore('banks', id);
-          const trash: TrashItem = {
-            id: `trash_${Date.now()}`,
-            originalId: id,
-            module: 'bancos',
-            itemTitle: bank.name,
-            originalData: bank,
-            deletedAt: new Date().toISOString(),
-            deletedBy: get().currentUser?.username || 'Admin',
-          };
           set((state) => ({
             banks: state.banks.filter((b) => b.id !== id),
-            trashBin: [trash, ...state.trashBin],
           }));
-          get().logAudit('bancos', 'Exclusão', `Banco ${bank.name} movido para a lixeira`);
+          get().recalculateBankBalances();
+          get().logAudit('bancos', 'Exclusão', `Banco ${bank.name} excluído definitivamente`);
         }
       },
 
@@ -831,57 +947,42 @@ export const useFinancialStore = create<FinancialStore>()(
           archived: false,
         };
         set((state) => ({ cards: [...state.cards, newCard] }));
+        saveDocToFirestore('cards', newCard);
         get().logAudit('cartoes', 'Inclusão', `Cartão ${newCard.name} cadastrado com limite de R$ ${newCard.limitTotal}`);
       },
 
       updateCard: (id, updates) => {
+        const oldCard = get().cards.find((c) => c.id === id);
+        if (!oldCard) return;
+        const limitTotal = updates.limitTotal ?? oldCard.limitTotal;
+        const limitUsed = updates.limitUsed ?? oldCard.limitUsed;
+        const limitAvailable = limitTotal - limitUsed;
+        const updatedCard = { ...oldCard, ...updates, limitTotal, limitUsed, limitAvailable };
+
         set((state) => ({
-          cards: state.cards.map((c) => {
-            if (c.id === id) {
-              const limitTotal = updates.limitTotal ?? c.limitTotal;
-              const limitUsed = updates.limitUsed ?? c.limitUsed;
-              const limitAvailable = limitTotal - limitUsed;
-              return { ...c, ...updates, limitTotal, limitUsed, limitAvailable };
-            }
-            return c;
-          }),
+          cards: state.cards.map((c) => (c.id === id ? updatedCard : c)),
         }));
+        saveDocToFirestore('cards', updatedCard);
         get().logAudit('cartoes', 'Alteração', `Cartão ID ${id} atualizado`);
       },
 
       deleteCardSmart: (id, mode) => {
         const card = get().cards.find((c) => c.id === id);
         if (!card) return false;
-        // Check if card has used limit or invoices
-        if (card.limitUsed > 0) {
-          // Block hard deletion, force deactivation
-          set((state) => ({
-            cards: state.cards.map((c) => (c.id === id ? { ...c, status: 'Inativo' } : c)),
-          }));
-          get().logAudit('cartoes', 'Alteração', `Cartão ${card.name} desativado por conter faturas/utilizações ativas`);
-          return true;
-        }
 
         if (mode === 'deactivate') {
+          const deactivatedCard = { ...card, status: 'Inativo' as const };
           set((state) => ({
-            cards: state.cards.map((c) => (c.id === id ? { ...c, status: 'Inativo' } : c)),
+            cards: state.cards.map((c) => (c.id === id ? deactivatedCard : c)),
           }));
+          saveDocToFirestore('cards', deactivatedCard);
           get().logAudit('cartoes', 'Alteração', `Cartão ${card.name} desativado`);
         } else {
-          const trash: TrashItem = {
-            id: `trash_${Date.now()}`,
-            originalId: id,
-            module: 'cartoes',
-            itemTitle: card.name,
-            originalData: card,
-            deletedAt: new Date().toISOString(),
-            deletedBy: get().currentUser?.username || 'Admin',
-          };
+          deleteDocFromFirestore('cards', id);
           set((state) => ({
             cards: state.cards.filter((c) => c.id !== id),
-            trashBin: [trash, ...state.trashBin],
           }));
-          get().logAudit('cartoes', 'Exclusão', `Cartão ${card.name} removido para a lixeira`);
+          get().logAudit('cartoes', 'Exclusão', `Cartão ${card.name} excluído definitivamente`);
         }
         return true;
       },
@@ -894,19 +995,29 @@ export const useFinancialStore = create<FinancialStore>()(
         const invoiceAmount = card.limitUsed;
         if (invoiceAmount <= 0) return true;
 
-        // Deduct from bank
-        const updatedBankBalance = bank.currentBalance - invoiceAmount;
-
         // Reset card used limit
-        const updatedCardLimitUsed = 0;
-        const updatedCardLimitAvailable = card.limitTotal;
-
+        const updatedCard = { ...card, limitUsed: 0, limitAvailable: card.limitTotal };
         set((state) => ({
-          banks: state.banks.map((b) => (b.id === fromBankId ? { ...b, currentBalance: updatedBankBalance } : b)),
-          cards: state.cards.map((c) =>
-            c.id === cardId ? { ...c, limitUsed: updatedCardLimitUsed, limitAvailable: updatedCardLimitAvailable } : c
-          ),
+          cards: state.cards.map((c) => (c.id === cardId ? updatedCard : c)),
         }));
+        saveDocToFirestore('cards', updatedCard);
+
+        // Record variable expense for the invoice payment
+        const defaultCatId =
+          get().categories.find((c) => c.name.toLowerCase().includes('cartão') || c.name.toLowerCase().includes('fatura'))?.id ||
+          get().categories[0]?.id ||
+          'cat_despesas';
+
+        get().addVariableExpense({
+          description: `Pagamento Fatura ${card.name}`,
+          categoryId: defaultCatId,
+          amount: invoiceAmount,
+          date: getCurrentDateFormatted(),
+          paymentMethod: 'Débito',
+          bankId: fromBankId,
+          status: 'Pago',
+          notes: `Pagamento de fatura do cartão ${card.name}`,
+        });
 
         get().logAudit(
           'cartoes',
@@ -954,22 +1065,11 @@ export const useFinancialStore = create<FinancialStore>()(
           }));
         }
 
-        const trash: TrashItem = {
-          id: `trash_${Date.now()}`,
-          originalId: id,
-          module: 'categorias',
-          itemTitle: cat.name,
-          originalData: cat,
-          deletedAt: new Date().toISOString(),
-          deletedBy: get().currentUser?.username || 'Admin',
-        };
-
         set((state) => ({
           categories: state.categories.filter((c) => c.id !== id),
-          trashBin: [trash, ...state.trashBin],
         }));
 
-        get().logAudit('categorias', 'Exclusão', `Categoria ${cat.name} removida`);
+        get().logAudit('categorias', 'Exclusão', `Categoria ${cat.name} excluída definitivamente`);
       },
 
       addSubcategory: (subData) => {
@@ -996,20 +1096,10 @@ export const useFinancialStore = create<FinancialStore>()(
         const sub = get().subcategories.find((s) => s.id === id);
         if (!sub) return;
         deleteDocFromFirestore('subcategories', id);
-        const trash: TrashItem = {
-          id: `trash_${Date.now()}`,
-          originalId: id,
-          module: 'subcategorias',
-          itemTitle: sub.name,
-          originalData: sub,
-          deletedAt: new Date().toISOString(),
-          deletedBy: get().currentUser?.username || 'Admin',
-        };
         set((state) => ({
           subcategories: state.subcategories.filter((s) => s.id !== id),
-          trashBin: [trash, ...state.trashBin],
         }));
-        get().logAudit('subcategorias', 'Exclusão', `Subcategoria ${sub.name} movida para a lixeira`);
+        get().logAudit('subcategorias', 'Exclusão', `Subcategoria ${sub.name} excluída definitivamente`);
       },
 
       // Incomes
@@ -1022,14 +1112,11 @@ export const useFinancialStore = create<FinancialStore>()(
           createdBy: get().currentUser?.username || 'davischio',
         };
 
-        // Update bank balance automatically
         set((state) => ({
           incomes: [...state.incomes, newIncome],
-          banks: state.banks.map((b) =>
-            b.id === incomeData.bankId ? { ...b, currentBalance: b.currentBalance + incomeData.amount } : b
-          ),
         }));
         saveDocToFirestore('incomes', newIncome);
+        get().recalculateBankBalances();
 
         get().logAudit('receitas', 'Inclusão', `Receita "${newIncome.description}" no valor de R$ ${newIncome.amount} lançada`);
       },
@@ -1038,31 +1125,12 @@ export const useFinancialStore = create<FinancialStore>()(
         const oldInc = get().incomes.find((i) => i.id === id);
         if (!oldInc) return;
 
-        // Balance adjustment if amount or bank changed
-        let banks = get().banks;
-        if (updates.amount !== undefined || updates.bankId !== undefined) {
-          const oldBankId = oldInc.bankId;
-          const newBankId = updates.bankId || oldBankId;
-          const oldAmt = oldInc.amount;
-          const newAmt = updates.amount !== undefined ? updates.amount : oldAmt;
-
-          banks = banks.map((b) => {
-            if (b.id === oldBankId) {
-              b = { ...b, currentBalance: b.currentBalance - oldAmt };
-            }
-            if (b.id === newBankId) {
-              b = { ...b, currentBalance: b.currentBalance + newAmt };
-            }
-            return b;
-          });
-        }
-
         const updatedInc = { ...oldInc, ...updates };
         set((state) => ({
-          banks,
           incomes: state.incomes.map((i) => (i.id === id ? updatedInc : i)),
         }));
         saveDocToFirestore('incomes', updatedInc);
+        get().recalculateBankBalances();
 
         get().logAudit('receitas', 'Alteração', `Receita "${oldInc.description}" atualizada`);
       },
@@ -1072,25 +1140,13 @@ export const useFinancialStore = create<FinancialStore>()(
         if (!inc) return;
 
         deleteDocFromFirestore('incomes', id);
-        // Revert bank balance
-        set((state) => ({
-          banks: state.banks.map((b) => (b.id === inc.bankId ? { ...b, currentBalance: b.currentBalance - inc.amount } : b)),
-          incomes: state.incomes.filter((i) => i.id !== id),
-          trashBin: [
-            {
-              id: `trash_${Date.now()}`,
-              originalId: id,
-              module: 'receitas',
-              itemTitle: inc.description,
-              originalData: inc,
-              deletedAt: new Date().toISOString(),
-              deletedBy: get().currentUser?.username || 'Admin',
-            },
-            ...state.trashBin,
-          ],
-        }));
 
-        get().logAudit('receitas', 'Exclusão', `Receita "${inc.description}" excluída e saldo bancário ajustado`);
+        set((state) => ({
+          incomes: state.incomes.filter((i) => i.id !== id),
+        }));
+        get().recalculateBankBalances();
+
+        get().logAudit('receitas', 'Exclusão', `Receita "${inc.description}" excluída definitivamente`);
       },
 
       // Fixed Expenses
@@ -1104,20 +1160,25 @@ export const useFinancialStore = create<FinancialStore>()(
         let cards = get().cards;
         let banks = get().banks;
 
-        // If card was selected, automatically post to credit card invoice and limit!
         if (expData.paymentMethod === 'Cartão' && expData.cardId) {
           cards = cards.map((c) => {
             if (c.id === expData.cardId) {
               const used = c.limitUsed + expData.amount;
-              return { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+              const updated = { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+              saveDocToFirestore('cards', updated);
+              return updated;
             }
             return c;
           });
         } else if (expData.status === 'Pago' && expData.bankId) {
-          // If paid from bank account
-          banks = banks.map((b) =>
-            b.id === expData.bankId ? { ...b, currentBalance: b.currentBalance - expData.amount } : b
-          );
+          banks = banks.map((b) => {
+            if (b.id === expData.bankId) {
+              const updated = { ...b, currentBalance: b.currentBalance - expData.amount };
+              saveDocToFirestore('banks', updated);
+              return updated;
+            }
+            return b;
+          });
         }
 
         set((state) => ({
@@ -1126,18 +1187,49 @@ export const useFinancialStore = create<FinancialStore>()(
           fixedExpenses: [...state.fixedExpenses, newExp],
         }));
         saveDocToFirestore('fixedExpenses', newExp);
+        get().recalculateBankBalances();
 
         get().logAudit('contas_fixas', 'Inclusão', `Conta fixa "${newExp.description}" lançada (R$ ${newExp.amount})`);
       },
 
       updateFixedExpense: (id, updates) => {
-        const exp = get().fixedExpenses.find((f) => f.id === id);
-        const updated = exp ? { ...exp, ...updates } : null;
+        const oldExp = get().fixedExpenses.find((f) => f.id === id);
+        if (!oldExp) return;
+        const updated = { ...oldExp, ...updates };
+
+        let cards = get().cards;
+
+        // Card limit adjustments
+        if (oldExp.paymentMethod === 'Cartão' && oldExp.cardId) {
+          cards = cards.map((c) => {
+            if (c.id === oldExp.cardId) {
+              const used = Math.max(0, c.limitUsed - oldExp.amount);
+              return { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+            }
+            return c;
+          });
+        }
+
+        if (updated.paymentMethod === 'Cartão' && updated.cardId) {
+          cards = cards.map((c) => {
+            if (c.id === updated.cardId) {
+              const used = c.limitUsed + updated.amount;
+              return { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+            }
+            return c;
+          });
+        }
+
+        cards.forEach((c) => saveDocToFirestore('cards', c));
+
         set((state) => ({
-          fixedExpenses: state.fixedExpenses.map((f) => (f.id === id ? (updated as FixedExpense) : f)),
+          cards,
+          fixedExpenses: state.fixedExpenses.map((f) => (f.id === id ? updated : f)),
         }));
-        if (updated) saveDocToFirestore('fixedExpenses', updated);
-        get().logAudit('contas_fixas', 'Alteração', `Conta fixa ID ${id} atualizada`);
+        saveDocToFirestore('fixedExpenses', updated);
+        get().recalculateBankBalances();
+
+        get().logAudit('contas_fixas', 'Alteração', `Conta fixa "${updated.description}" atualizada`);
       },
 
       deleteFixedExpense: (id) => {
@@ -1145,23 +1237,28 @@ export const useFinancialStore = create<FinancialStore>()(
         if (!exp) return;
 
         deleteDocFromFirestore('fixedExpenses', id);
-        set((state) => ({
-          fixedExpenses: state.fixedExpenses.filter((f) => f.id !== id),
-          trashBin: [
-            {
-              id: `trash_${Date.now()}`,
-              originalId: id,
-              module: 'contas_fixas',
-              itemTitle: exp.description,
-              originalData: exp,
-              deletedAt: new Date().toISOString(),
-              deletedBy: get().currentUser?.username || 'Admin',
-            },
-            ...state.trashBin,
-          ],
-        }));
 
-        get().logAudit('contas_fixas', 'Exclusão', `Conta fixa "${exp.description}" movida para a lixeira`);
+        let cards = get().cards;
+
+        if (exp.paymentMethod === 'Cartão' && exp.cardId) {
+          cards = cards.map((c) => {
+            if (c.id === exp.cardId) {
+              const used = Math.max(0, c.limitUsed - exp.amount);
+              const updated = { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+              saveDocToFirestore('cards', updated);
+              return updated;
+            }
+            return c;
+          });
+        }
+
+        set((state) => ({
+          cards,
+          fixedExpenses: state.fixedExpenses.filter((f) => f.id !== id),
+        }));
+        get().recalculateBankBalances();
+
+        get().logAudit('contas_fixas', 'Exclusão', `Conta fixa "${exp.description}" excluída definitivamente`);
       },
 
       // Variable Expenses
@@ -1173,40 +1270,68 @@ export const useFinancialStore = create<FinancialStore>()(
         };
 
         let cards = get().cards;
-        let banks = get().banks;
 
         if (expData.paymentMethod === 'Cartão' && expData.cardId) {
           cards = cards.map((c) => {
             if (c.id === expData.cardId) {
               const used = c.limitUsed + expData.amount;
-              return { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+              const updated = { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+              saveDocToFirestore('cards', updated);
+              return updated;
             }
             return c;
           });
-        } else if (expData.status === 'Pago' && expData.bankId) {
-          banks = banks.map((b) =>
-            b.id === expData.bankId ? { ...b, currentBalance: b.currentBalance - expData.amount } : b
-          );
         }
 
         set((state) => ({
           cards,
-          banks,
           variableExpenses: [...state.variableExpenses, newExp],
         }));
         saveDocToFirestore('variableExpenses', newExp);
+        get().recalculateBankBalances();
 
         get().logAudit('contas_variaveis', 'Inclusão', `Conta variável "${newExp.description}" lançada (R$ ${newExp.amount})`);
       },
 
       updateVariableExpense: (id, updates) => {
         const exp = get().variableExpenses.find((v) => v.id === id);
-        const updated = exp ? { ...exp, ...updates } : null;
+        if (!exp) return;
+        const updated = { ...exp, ...updates };
+
+        let cards = get().cards;
+
+        // Revert old amount from old card if it was a card expense
+        if (exp.paymentMethod === 'Cartão' && exp.cardId) {
+          cards = cards.map((c) => {
+            if (c.id === exp.cardId) {
+              const used = Math.max(0, c.limitUsed - exp.amount);
+              return { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+            }
+            return c;
+          });
+        }
+
+        // Apply new amount to new card if updated is a card expense
+        if (updated.paymentMethod === 'Cartão' && updated.cardId) {
+          cards = cards.map((c) => {
+            if (c.id === updated.cardId) {
+              const used = c.limitUsed + updated.amount;
+              return { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+            }
+            return c;
+          });
+        }
+
+        cards.forEach((c) => saveDocToFirestore('cards', c));
+
         set((state) => ({
-          variableExpenses: state.variableExpenses.map((v) => (v.id === id ? (updated as VariableExpense) : v)),
+          cards,
+          variableExpenses: state.variableExpenses.map((v) => (v.id === id ? updated : v)),
         }));
-        if (updated) saveDocToFirestore('variableExpenses', updated);
-        get().logAudit('contas_variaveis', 'Alteração', `Conta variável ID ${id} atualizada`);
+        saveDocToFirestore('variableExpenses', updated);
+        get().recalculateBankBalances();
+
+        get().logAudit('contas_variaveis', 'Alteração', `Conta variável "${updated.description}" atualizada`);
       },
 
       deleteVariableExpense: (id) => {
@@ -1214,23 +1339,28 @@ export const useFinancialStore = create<FinancialStore>()(
         if (!exp) return;
 
         deleteDocFromFirestore('variableExpenses', id);
-        set((state) => ({
-          variableExpenses: state.variableExpenses.filter((v) => v.id !== id),
-          trashBin: [
-            {
-              id: `trash_${Date.now()}`,
-              originalId: id,
-              module: 'contas_variaveis',
-              itemTitle: exp.description,
-              originalData: exp,
-              deletedAt: new Date().toISOString(),
-              deletedBy: get().currentUser?.username || 'Admin',
-            },
-            ...state.trashBin,
-          ],
-        }));
 
-        get().logAudit('contas_variaveis', 'Exclusão', `Conta variável "${exp.description}" excluída`);
+        let cards = get().cards;
+
+        if (exp.paymentMethod === 'Cartão' && exp.cardId) {
+          cards = cards.map((c) => {
+            if (c.id === exp.cardId) {
+              const used = Math.max(0, c.limitUsed - exp.amount);
+              const updated = { ...c, limitUsed: used, limitAvailable: c.limitTotal - used };
+              saveDocToFirestore('cards', updated);
+              return updated;
+            }
+            return c;
+          });
+        }
+
+        set((state) => ({
+          cards,
+          variableExpenses: state.variableExpenses.filter((v) => v.id !== id),
+        }));
+        get().recalculateBankBalances();
+
+        get().logAudit('contas_variaveis', 'Exclusão', `Conta variável "${exp.description}" excluída definitivamente`);
       },
 
       // Loans
@@ -1239,35 +1369,41 @@ export const useFinancialStore = create<FinancialStore>()(
         const netReceived = loanData.netAmountReceived || loanData.contractedAmount;
 
         let installments: LoanInstallment[] = [];
+        const startDate = loanData.contractDate || getCurrentDateFormatted();
+        const firstDue = loanData.firstDueDate;
+
         if (loanData.amortizationSystem === 'SAC') {
           installments = calculateSACSchedule(
             loanData.contractedAmount,
             loanData.interestRateMonthly,
             loanData.installmentsTotal,
-            getCurrentDateFormatted(),
+            startDate,
             loanData.iofAmount || 0,
             loanData.insuranceAmount || 0,
-            loanData.feesAmount || 0
+            loanData.feesAmount || 0,
+            firstDue
           );
         } else if (loanData.amortizationSystem === 'Personalizado') {
           installments = calculateCustomSchedule(
             loanData.contractedAmount,
             loanData.interestRateMonthly,
             loanData.installmentsTotal,
-            getCurrentDateFormatted(),
+            startDate,
             loanData.iofAmount || 0,
             loanData.insuranceAmount || 0,
-            loanData.feesAmount || 0
+            loanData.feesAmount || 0,
+            firstDue
           );
         } else {
           installments = calculatePRICESchedule(
             loanData.contractedAmount,
             loanData.interestRateMonthly,
             loanData.installmentsTotal,
-            getCurrentDateFormatted(),
+            startDate,
             loanData.iofAmount || 0,
             loanData.insuranceAmount || 0,
-            loanData.feesAmount || 0
+            loanData.feesAmount || 0,
+            firstDue
           );
         }
 
@@ -1293,22 +1429,78 @@ export const useFinancialStore = create<FinancialStore>()(
           archived: false,
         };
 
-        // Creditar automaticamente o valor recebido na conta escolhida
-        let banks = get().banks;
-        if (loanData.bankId) {
-          banks = banks.map((b) =>
-            b.id === loanData.bankId ? { ...b, currentBalance: b.currentBalance + netReceived } : b
-          );
-        }
-
-        set((state) => ({ banks, loans: [...state.loans, newLoan] }));
+        set((state) => ({ loans: [...state.loans, newLoan] }));
+        saveDocToFirestore('loans', newLoan);
+        get().recalculateBankBalances();
         get().logAudit('emprestimos', 'Inclusão', `Empréstimo ${newLoan.type} contratado no valor de R$ ${newLoan.contractedAmount} e creditado R$ ${netReceived} no banco.`);
       },
 
       updateLoan: (id, updates) => {
+        const loan = get().loans.find((l) => l.id === id);
+        if (!loan) return;
+        let updated: Loan = { ...loan, ...updates };
+
+        const termsChanged =
+          updates.contractedAmount !== undefined ||
+          updates.interestRateMonthly !== undefined ||
+          updates.installmentsTotal !== undefined ||
+          updates.amortizationSystem !== undefined ||
+          updates.feesAmount !== undefined ||
+          updates.contractDate !== undefined ||
+          updates.firstDueDate !== undefined;
+
+        if (!updated.installments || updated.installments.length === 0 || termsChanged) {
+          let newInstallments: LoanInstallment[] = [];
+          const startDate = updated.contractDate || getCurrentDateFormatted();
+          const firstDue = updated.firstDueDate;
+
+          if (updated.amortizationSystem === 'SAC') {
+            newInstallments = calculateSACSchedule(
+              updated.contractedAmount,
+              updated.interestRateMonthly,
+              updated.installmentsTotal,
+              startDate,
+              updated.iofAmount || 0,
+              updated.insuranceAmount || 0,
+              updated.feesAmount || 0,
+              firstDue
+            );
+          } else if (updated.amortizationSystem === 'Personalizado') {
+            newInstallments = calculateCustomSchedule(
+              updated.contractedAmount,
+              updated.interestRateMonthly,
+              updated.installmentsTotal,
+              startDate,
+              updated.iofAmount || 0,
+              updated.insuranceAmount || 0,
+              updated.feesAmount || 0,
+              firstDue
+            );
+          } else {
+            newInstallments = calculatePRICESchedule(
+              updated.contractedAmount,
+              updated.interestRateMonthly,
+              updated.installmentsTotal,
+              startDate,
+              updated.iofAmount || 0,
+              updated.insuranceAmount || 0,
+              updated.feesAmount || 0,
+              firstDue
+            );
+          }
+          if (loan.installments && loan.installments.length > 0 && !termsChanged) {
+            updated.installments = loan.installments;
+          } else {
+            updated.installments = newInstallments;
+            updated.installmentAmount = newInstallments[0]?.amount || updated.installmentAmount;
+          }
+        }
+
         set((state) => ({
-          loans: state.loans.map((l) => (l.id === id ? { ...l, ...updates } : l)),
+          loans: state.loans.map((l) => (l.id === id ? updated : l)),
         }));
+        saveDocToFirestore('loans', updated);
+        get().recalculateBankBalances();
         get().logAudit('emprestimos', 'Alteração', `Empréstimo ID ${id} atualizado`);
       },
 
@@ -1316,39 +1508,23 @@ export const useFinancialStore = create<FinancialStore>()(
         const loan = get().loans.find((l) => l.id === id);
         if (!loan) return false;
 
-        if (loan.installmentsPaid > 0) {
-          set((state) => ({
-            loans: state.loans.map((l) => (l.id === id ? { ...l, status: 'Encerrado' } : l)),
-          }));
-          get().logAudit('emprestimos', 'Alteração', `Empréstimo ID ${id} encerrado (não pode ser excluído por ter parcelas pagas)`);
-          return true;
-        }
-
-        const trash: TrashItem = {
-          id: `trash_${Date.now()}`,
-          originalId: id,
-          module: 'emprestimos',
-          itemTitle: `Empréstimo ${loan.type}`,
-          originalData: loan,
-          deletedAt: new Date().toISOString(),
-          deletedBy: get().currentUser?.username || 'Admin',
-        };
+        deleteDocFromFirestore('loans', id);
 
         set((state) => ({
           loans: state.loans.filter((l) => l.id !== id),
-          trashBin: [trash, ...state.trashBin],
         }));
+        get().recalculateBankBalances();
 
-        get().logAudit('emprestimos', 'Exclusão', `Empréstimo ID ${id} movido para a lixeira`);
+        get().logAudit('emprestimos', 'Exclusão', `Empréstimo ID ${id} excluído definitivamente`);
         return true;
       },
 
-      updateLoanInstallmentStatus: (loanId, installmentNumber, newStatus, paidAmountVal, fromBankId) => {
+      updateLoanInstallmentStatus: (loanId, installmentNumber, newStatus, paidAmountVal, paymentSourceId) => {
         const loan = get().loans.find((l) => l.id === loanId);
-        if (!loan) return;
+        if (!loan) return { success: false, error: 'Empréstimo não encontrado.' };
 
         const targetInst = loan.installments.find((i) => i.number === installmentNumber);
-        if (!targetInst) return;
+        if (!targetInst) return { success: false, error: 'Parcela não encontrada.' };
 
         const prevStatus = targetInst.status;
         const isNowPaid = newStatus === 'Paga' || newStatus === 'Antecipada' || newStatus === 'Quitada';
@@ -1356,11 +1532,42 @@ export const useFinancialStore = create<FinancialStore>()(
 
         const amountToDebit = paidAmountVal !== undefined ? paidAmountVal : targetInst.amount;
 
-        let banks = get().banks;
-        if (isNowPaid && !wasPaid && fromBankId) {
-          banks = banks.map((b) => (b.id === fromBankId ? { ...b, currentBalance: b.currentBalance - amountToDebit } : b));
-        } else if (!isNowPaid && wasPaid && fromBankId) {
-          banks = banks.map((b) => (b.id === fromBankId ? { ...b, currentBalance: b.currentBalance + targetInst.paidAmount } : b));
+        const sourceId = paymentSourceId || targetInst.paymentBankId || targetInst.paymentCardId || loan.bankId;
+        const bank = get().banks.find((b) => b.id === sourceId);
+        const card = get().cards.find((c) => c.id === sourceId);
+
+        // Balance / limit validation for payments
+        if (isNowPaid && !wasPaid) {
+          if (bank) {
+            if (bank.currentBalance < amountToDebit) {
+              return {
+                success: false,
+                error: `Pagamento Rejeitado: Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor da parcela: R$ ${amountToDebit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+              };
+            }
+          } else if (card) {
+            if (card.limitAvailable < amountToDebit) {
+              return {
+                success: false,
+                error: `Pagamento Rejeitado: Limite insuficiente no cartão "${card.name}". Limite disponível: R$ ${card.limitAvailable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor da parcela: R$ ${amountToDebit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+              };
+            }
+            // Update credit card used/available limit
+            const newUsed = card.limitUsed + amountToDebit;
+            const newAvailable = Math.max(0, card.limitTotal - newUsed);
+            const updatedCard = { ...card, limitUsed: newUsed, limitAvailable: newAvailable };
+            set((state) => ({ cards: state.cards.map((c) => (c.id === card.id ? updatedCard : c)) }));
+            saveDocToFirestore('cards', updatedCard);
+          }
+        } else if (!isNowPaid && wasPaid) {
+          // Reverting payment
+          if (card) {
+            const newUsed = Math.max(0, card.limitUsed - targetInst.paidAmount);
+            const newAvailable = card.limitTotal - newUsed;
+            const updatedCard = { ...card, limitUsed: newUsed, limitAvailable: newAvailable };
+            set((state) => ({ cards: state.cards.map((c) => (c.id === card.id ? updatedCard : c)) }));
+            saveDocToFirestore('cards', updatedCard);
+          }
         }
 
         const updatedInstallments = loan.installments.map((inst) => {
@@ -1370,6 +1577,8 @@ export const useFinancialStore = create<FinancialStore>()(
               status: newStatus,
               paidAmount: isNowPaid ? amountToDebit : 0,
               paidDate: isNowPaid ? (inst.paidDate || getCurrentDateFormatted()) : undefined,
+              paymentBankId: bank ? bank.id : undefined,
+              paymentCardId: card ? card.id : undefined,
             };
           }
           return inst;
@@ -1377,56 +1586,107 @@ export const useFinancialStore = create<FinancialStore>()(
 
         const paidInsts = updatedInstallments.filter((i) => i.status === 'Paga' || i.status === 'Antecipada' || i.status === 'Quitada');
         const installmentsPaid = paidInsts.length;
-        const totalPaidAmt = paidInsts.reduce((acc, i) => acc + i.paidAmount, 0);
-        const totalPaidInterest = paidInsts.reduce((acc, i) => acc + i.interest, 0);
-        const totalPaidAmort = paidInsts.reduce((acc, i) => acc + i.principal, 0);
-        const outstandingBalance = Math.max(0, loan.contractedAmount - totalPaidAmort);
-        const isQuitado = installmentsPaid >= loan.installmentsTotal || outstandingBalance <= 0;
+
+        let schedule = loan.installments;
+        if (!schedule || schedule.length === 0 || !schedule[0]?.principal) {
+          const startDate = loan.contractDate || getCurrentDateFormatted();
+          if (loan.amortizationSystem === 'SAC') {
+            schedule = calculateSACSchedule(loan.contractedAmount, loan.interestRateMonthly, loan.installmentsTotal, startDate, loan.iofAmount || 0, loan.insuranceAmount || 0, loan.feesAmount || 0, loan.firstDueDate);
+          } else if (loan.amortizationSystem === 'Personalizado') {
+            schedule = calculateCustomSchedule(loan.contractedAmount, loan.interestRateMonthly, loan.installmentsTotal, startDate, loan.iofAmount || 0, loan.insuranceAmount || 0, loan.feesAmount || 0, loan.firstDueDate);
+          } else {
+            schedule = calculatePRICESchedule(loan.contractedAmount, loan.interestRateMonthly, loan.installmentsTotal, startDate, loan.iofAmount || 0, loan.insuranceAmount || 0, loan.feesAmount || 0, loan.firstDueDate);
+          }
+        }
+
+        let calcPaidAmort = 0;
+        let calcPaidInterest = 0;
+        let calcPaidAmt = 0;
+
+        for (const pInst of paidInsts) {
+          const match = schedule.find((s) => s.number === pInst.number);
+          const pVal = (pInst.principal && pInst.principal > 0) ? pInst.principal : (match?.principal || 0);
+          const iVal = (pInst.interest && pInst.interest > 0) ? pInst.interest : (match?.interest || 0);
+          const amtVal = pInst.paidAmount || pInst.amount || (match?.amount || 0);
+
+          calcPaidAmort += pVal;
+          calcPaidInterest += iVal;
+          calcPaidAmt += amtVal;
+        }
+
+        const totalPaidAmt = Math.round(calcPaidAmt * 100) / 100;
+        const totalPaidInterest = Math.round(calcPaidInterest * 100) / 100;
+        const totalPaidAmort = Math.round(calcPaidAmort * 100) / 100;
+        const outstandingBalance = Math.round(Math.max(0, loan.contractedAmount - totalPaidAmort) * 100) / 100;
+        const isQuitado = installmentsPaid >= loan.installmentsTotal || (outstandingBalance <= 0 && loan.contractedAmount > 0);
+
+        const updatedLoan = {
+          ...loan,
+          installmentsPaid,
+          paidAmount: totalPaidAmt,
+          paidInterest: totalPaidInterest,
+          paidAmortization: totalPaidAmort,
+          outstandingBalance,
+          status: isQuitado ? ('Quitado' as const) : ('Ativo' as const),
+          installments: updatedInstallments,
+        };
 
         set((state) => ({
-          banks,
-          loans: state.loans.map((l) =>
-            l.id === loanId
-              ? {
-                  ...l,
-                  installmentsPaid,
-                  paidAmount: totalPaidAmt,
-                  paidInterest: totalPaidInterest,
-                  paidAmortization: totalPaidAmort,
-                  outstandingBalance,
-                  status: isQuitado ? 'Quitado' : 'Ativo',
-                  installments: updatedInstallments,
-                }
-              : l
-          ),
+          loans: state.loans.map((l) => (l.id === loanId ? updatedLoan : l)),
         }));
+        saveDocToFirestore('loans', updatedLoan);
+        get().recalculateBankBalances();
 
         get().logAudit(
           'emprestimos',
           'Alteração',
           `Status da parcela ${installmentNumber} do empréstimo alterado para ${newStatus}`
         );
+
+        return { success: true };
       },
 
-      payLoanInstallment: (loanId, installmentNumber, fromBankId) => {
+      payLoanInstallment: (loanId, installmentNumber, paymentSourceId) => {
         const loan = get().loans.find((l) => l.id === loanId);
-        if (!loan) return;
+        if (!loan) return { success: false, error: 'Empréstimo não encontrado.' };
         const targetInst = loan.installments.find((i) => i.number === installmentNumber);
-        if (!targetInst) return;
-        get().updateLoanInstallmentStatus(loanId, installmentNumber, 'Paga', targetInst.amount, fromBankId);
+        if (!targetInst) return { success: false, error: 'Parcela não encontrada.' };
+        return get().updateLoanInstallmentStatus(loanId, installmentNumber, 'Paga', targetInst.amount, paymentSourceId);
       },
 
-      earlyPayoffLoan: (loanId, payUntilInstallment, fromBankId) => {
+      earlyPayoffLoan: (loanId, payUntilInstallment, paymentSourceId) => {
         const loan = get().loans.find((l) => l.id === loanId);
-        const bank = get().banks.find((b) => b.id === fromBankId);
-        if (!loan || !bank) return;
+        if (!loan) return { success: false, error: 'Empréstimo não encontrado.' };
+
+        const sourceId = paymentSourceId || loan.bankId;
+        const bank = get().banks.find((b) => b.id === sourceId);
+        const card = get().cards.find((c) => c.id === sourceId);
 
         const unpaidInsts = loan.installments.filter(
           (i) => i.number > payUntilInstallment && i.status !== 'Paga' && i.status !== 'Antecipada' && i.status !== 'Quitada'
         );
         const netPayoffVal = unpaidInsts.reduce((acc, i) => acc + i.principal + i.iof + i.insurance + i.fees, 0);
 
-        const updatedBankBalance = bank.currentBalance - netPayoffVal;
+        if (bank) {
+          if (bank.currentBalance < netPayoffVal) {
+            return {
+              success: false,
+              error: `Quitação Rejeitada: Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor necessário: R$ ${netPayoffVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+            };
+          }
+        } else if (card) {
+          if (card.limitAvailable < netPayoffVal) {
+            return {
+              success: false,
+              error: `Quitação Rejeitada: Limite insuficiente no cartão "${card.name}". Limite disponível: R$ ${card.limitAvailable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor necessário: R$ ${netPayoffVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+            };
+          }
+          const newUsed = card.limitUsed + netPayoffVal;
+          const newAvailable = Math.max(0, card.limitTotal - newUsed);
+          const updatedCard = { ...card, limitUsed: newUsed, limitAvailable: newAvailable };
+          set((state) => ({ cards: state.cards.map((c) => (c.id === card.id ? updatedCard : c)) }));
+          saveDocToFirestore('cards', updatedCard);
+        }
 
         const updatedInstallments = loan.installments.map((inst) => {
           if (inst.number > payUntilInstallment && inst.status !== 'Paga') {
@@ -1435,6 +1695,8 @@ export const useFinancialStore = create<FinancialStore>()(
               status: 'Quitada' as const,
               paidAmount: inst.principal + inst.iof + inst.insurance + inst.fees,
               paidDate: getCurrentDateFormatted(),
+              paymentBankId: bank ? bank.id : undefined,
+              paymentCardId: card ? card.id : undefined,
             };
           }
           return inst;
@@ -1445,29 +1707,101 @@ export const useFinancialStore = create<FinancialStore>()(
         const totalPaidInterest = paidInsts.reduce((acc, i) => acc + i.interest, 0);
         const totalPaidAmort = paidInsts.reduce((acc, i) => acc + i.principal, 0);
 
+        const updatedLoan = {
+          ...loan,
+          installmentsPaid: loan.installmentsTotal,
+          paidAmount: totalPaidAmt,
+          paidInterest: totalPaidInterest,
+          paidAmortization: totalPaidAmort,
+          outstandingBalance: 0,
+          status: 'Quitado' as const,
+          installments: updatedInstallments,
+        };
+
         set((state) => ({
-          banks: state.banks.map((b) => (b.id === fromBankId ? { ...b, currentBalance: updatedBankBalance } : b)),
-          loans: state.loans.map((l) =>
-            l.id === loanId
-              ? {
-                  ...l,
-                  installmentsPaid: l.installmentsTotal,
-                  paidAmount: totalPaidAmt,
-                  paidInterest: totalPaidInterest,
-                  paidAmortization: totalPaidAmort,
-                  outstandingBalance: 0,
-                  status: 'Quitado',
-                  installments: updatedInstallments,
-                }
-              : l
-          ),
+          loans: state.loans.map((l) => (l.id === loanId ? updatedLoan : l)),
         }));
+
+        saveDocToFirestore('loans', updatedLoan);
+        get().recalculateBankBalances();
 
         get().logAudit(
           'emprestimos',
           'Quitação',
-          `Quitação antecipada do empréstimo (${loan.type}) realizada por R$ ${netPayoffVal} via banco ${bank.name}`
+          `Quitação antecipada do empréstimo (${loan.type}) realizada por R$ ${netPayoffVal}`
         );
+
+        return { success: true };
+      },
+
+      applyExtraAmortizationLoan: (loanId, extraAmount, extraDate, mode, paymentSourceId) => {
+        const loan = get().loans.find((l) => l.id === loanId);
+        if (!loan || extraAmount <= 0) return { success: false, error: 'Valor inválido para amortização.' };
+
+        const sourceId = paymentSourceId || loan.bankId;
+        const bank = get().banks.find((b) => b.id === sourceId);
+        const card = get().cards.find((c) => c.id === sourceId);
+
+        if (bank) {
+          if (bank.currentBalance < extraAmount) {
+            return {
+              success: false,
+              error: `Amortização Rejeitada: Saldo insuficiente na conta "${bank.name}". Saldo disponível: R$ ${bank.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor: R$ ${extraAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+            };
+          }
+        } else if (card) {
+          if (card.limitAvailable < extraAmount) {
+            return {
+              success: false,
+              error: `Amortização Rejeitada: Limite insuficiente no cartão "${card.name}". Limite disponível: R$ ${card.limitAvailable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, Valor: R$ ${extraAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+            };
+          }
+          const newUsed = card.limitUsed + extraAmount;
+          const newAvailable = Math.max(0, card.limitTotal - newUsed);
+          const updatedCard = { ...card, limitUsed: newUsed, limitAvailable: newAvailable };
+          set((state) => ({ cards: state.cards.map((c) => (c.id === card.id ? updatedCard : c)) }));
+          saveDocToFirestore('cards', updatedCard);
+        }
+
+        const details = calculateExtraAmortizationDetails(loan, extraAmount, extraDate, mode);
+
+        const isQuitado = details.newBalance <= 0;
+        const updatedLoan: Loan = {
+          ...loan,
+          outstandingBalance: details.newBalance,
+          installmentsTotal: details.newInstallments.length,
+          installmentAmount: details.newInstallmentAmount > 0 ? details.newInstallmentAmount : loan.installmentAmount,
+          status: isQuitado ? 'Quitado' : loan.status,
+          installments: details.newInstallments,
+        };
+
+        set((state) => ({
+          loans: state.loans.map((l) => (l.id === loanId ? updatedLoan : l)),
+        }));
+
+        saveDocToFirestore('loans', updatedLoan);
+        get().recalculateBankBalances();
+
+        get().logAudit(
+          'emprestimos',
+          'Alteração',
+          `Amortização extra de R$ ${extraAmount} no empréstimo (${loan.type}). Economia de R$ ${details.interestSaved} (${details.savingsPercent}%)`
+        );
+
+        return { success: true };
+      },
+
+      deleteLoan: (id) => {
+        const loan = get().loans.find((l) => l.id === id);
+        if (!loan) return;
+
+        deleteDocFromFirestore('loans', id);
+
+        set((state) => ({
+          loans: state.loans.filter((l) => l.id !== id),
+        }));
+
+        get().logAudit('emprestimos', 'Exclusão', `Empréstimo ID ${id} excluído definitivamente`);
       },
 
       // Investments
@@ -1545,22 +1879,72 @@ export const useFinancialStore = create<FinancialStore>()(
         const inv = get().investments.find((i) => i.id === id);
         if (!inv) return;
 
-        const trash: TrashItem = {
-          id: `trash_${Date.now()}`,
-          originalId: id,
-          module: 'investimentos',
-          itemTitle: `${inv.type} (${inv.institution})`,
-          originalData: inv,
-          deletedAt: new Date().toISOString(),
-          deletedBy: get().currentUser?.username || 'Admin',
-        };
+        deleteDocFromFirestore('investments', id);
 
         set((state) => ({
           investments: state.investments.filter((i) => i.id !== id),
-          trashBin: [trash, ...state.trashBin],
         }));
 
-        get().logAudit('investimentos', 'Exclusão', `Investimento ${inv.type} movido para a lixeira`);
+        get().logAudit('investimentos', 'Exclusão', `Investimento ${inv.type} excluído definitivamente`);
+      },
+
+      recalculateInvestmentYields: (marketRates) => {
+        const cdi = marketRates?.cdi ?? 10.40;
+        const selic = marketRates?.selic ?? 10.50;
+        const ipca = marketRates?.ipca ?? 4.00;
+
+        const updatedInvestments = get().investments.map((inv) => {
+          const indexer = inv.indexer || (inv.type === 'Tesouro Direto' ? 'Selic' : 'CDI');
+          const multiplier = inv.interestRate || 100;
+
+          let annualRate = 10.0;
+          if (indexer === 'CDI') {
+            annualRate = (cdi * multiplier) / 100;
+          } else if (indexer === 'Selic') {
+            annualRate = (selic * multiplier) / 100;
+          } else if (indexer === 'IPCA') {
+            annualRate = ipca + (inv.interestRate || 6.0);
+          } else if (indexer === 'Prefixado') {
+            annualRate = inv.interestRate || 12.0;
+          } else {
+            annualRate = inv.interestRate || 10.0;
+          }
+
+          const monthlyRate = annualRate / 12;
+
+          // Estimate elapsed months since application
+          const appDate = new Date(inv.applicationDate || '2025-01-01');
+          const now = new Date();
+          const elapsedMonths = Math.max(
+            1,
+            (now.getFullYear() - appDate.getFullYear()) * 12 + (now.getMonth() - appDate.getMonth())
+          );
+
+          const yieldMonthly = Math.round(inv.appliedAmount * (monthlyRate / 100) * 100) / 100;
+          const yieldYearly = Math.round(inv.appliedAmount * (annualRate / 100) * 100) / 100;
+          const yieldAccumulated = Math.round(inv.appliedAmount * Math.pow(1 + monthlyRate / 100, elapsedMonths) - inv.appliedAmount);
+          const currentAmount = Math.round((inv.appliedAmount + yieldAccumulated) * 100) / 100;
+
+          const updated: Investment = {
+            ...inv,
+            indexer,
+            yieldPercent: Math.round(annualRate * 100) / 100,
+            yieldMonthly,
+            yieldYearly,
+            yieldAccumulated: Math.max(0, yieldAccumulated),
+            currentAmount: Math.max(inv.appliedAmount, currentAmount),
+          };
+
+          saveDocToFirestore('investments', updated);
+          return updated;
+        });
+
+        set({ investments: updatedInvestments });
+        get().logAudit(
+          'investimentos',
+          'Alteração',
+          `Taxas oficiais e rendimentos atualizados automaticamente (CDI: ${cdi}%, Selic: ${selic}%, IPCA: ${ipca}%)`
+        );
       },
 
       // Goals
@@ -1633,16 +2017,9 @@ export const useFinancialStore = create<FinancialStore>()(
 
         set((state) => ({
           transfers: [...state.transfers, newTransfer],
-          banks: state.banks.map((b) => {
-            if (b.id === transferData.originBankId) {
-              return { ...b, currentBalance: b.currentBalance - transferData.amount };
-            }
-            if (b.id === transferData.destinationBankId) {
-              return { ...b, currentBalance: b.currentBalance + transferData.amount };
-            }
-            return b;
-          }),
         }));
+        saveDocToFirestore('transfers', newTransfer);
+        get().recalculateBankBalances();
 
         get().logAudit(
           'transferencias',
@@ -1655,6 +2032,8 @@ export const useFinancialStore = create<FinancialStore>()(
       restoreTrashItem: (id) => {
         const item = get().trashBin.find((t) => t.id === id);
         if (!item) return;
+
+        deleteDocFromFirestore('trashBin', id);
 
         const { module, originalData } = item;
 
@@ -1697,11 +2076,34 @@ export const useFinancialStore = create<FinancialStore>()(
           return updatedState as any;
         });
 
+        get().recalculateBankBalances();
         get().logAudit(module, 'Restauração', `Item "${item.itemTitle}" restaurado da lixeira`);
       },
 
       purgeTrashItem: (id) => {
         const item = get().trashBin.find((t) => t.id === id);
+        deleteDocFromFirestore('trashBin', id);
+
+        if (item && item.originalId) {
+          const moduleToCollection: Record<string, string> = {
+            usuarios: 'users',
+            bancos: 'banks',
+            cartoes: 'cards',
+            categorias: 'categories',
+            subcategorias: 'subcategories',
+            receitas: 'incomes',
+            contas_fixas: 'fixedExpenses',
+            contas_variaveis: 'variableExpenses',
+            emprestimos: 'loans',
+            investimentos: 'investments',
+            metas: 'goals',
+          };
+          const colName = moduleToCollection[item.module];
+          if (colName) {
+            deleteDocFromFirestore(colName, item.originalId);
+          }
+        }
+
         set((state) => ({
           trashBin: state.trashBin.filter((t) => t.id !== id),
         }));
@@ -1711,6 +2113,27 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       clearTrashBin: () => {
+        const moduleToCollection: Record<string, string> = {
+          usuarios: 'users',
+          bancos: 'banks',
+          cartoes: 'cards',
+          categorias: 'categories',
+          subcategorias: 'subcategories',
+          receitas: 'incomes',
+          contas_fixas: 'fixedExpenses',
+          contas_variaveis: 'variableExpenses',
+          emprestimos: 'loans',
+          investimentos: 'investments',
+          metas: 'goals',
+        };
+
+        get().trashBin.forEach((t) => {
+          deleteDocFromFirestore('trashBin', t.id);
+          if (t.originalId) {
+            const colName = moduleToCollection[t.module];
+            if (colName) deleteDocFromFirestore(colName, t.originalId);
+          }
+        });
         set({ trashBin: [] });
         get().logAudit('configuracoes', 'Exclusão', 'Lixeira esvaziada completamente');
       },
@@ -1900,6 +2323,33 @@ export const useFinancialStore = create<FinancialStore>()(
       partialize: (state) => {
         const { currentUser, ...rest } = state;
         return rest;
+      },
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+
+        // Ensure all initial seed variable expenses exist if missing in local storage
+        if (state.variableExpenses) {
+          const existingVarIds = new Set(state.variableExpenses.map((v) => v.id));
+          const missingVar = INITIAL_VARIABLE_EXPENSES.filter((v) => !existingVarIds.has(v.id));
+          if (missingVar.length > 0) {
+            state.variableExpenses = [...state.variableExpenses, ...missingVar];
+          }
+        } else {
+          state.variableExpenses = INITIAL_VARIABLE_EXPENSES;
+        }
+
+        // Ensure all initial seed fixed expenses exist if missing in local storage
+        if (state.fixedExpenses) {
+          const existingFixIds = new Set(state.fixedExpenses.map((f) => f.id));
+          const missingFix = INITIAL_FIXED_EXPENSES.filter((f) => !existingFixIds.has(f.id));
+          if (missingFix.length > 0) {
+            state.fixedExpenses = [...state.fixedExpenses, ...missingFix];
+          }
+        } else {
+          state.fixedExpenses = INITIAL_FIXED_EXPENSES;
+        }
+
+        state.recalculateBankBalances();
       },
     }
   )

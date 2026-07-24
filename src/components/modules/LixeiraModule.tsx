@@ -286,7 +286,7 @@ export const LixeiraModule: React.FC = () => {
           useFinancialStore.setState((s) => ({
             investments: s.investments.filter((x) => x.id !== item.id),
           }));
-          deleteDocFromFirestore('investimentos', item.id);
+          deleteDocFromFirestore('investments', item.id);
           break;
         default:
           break;
@@ -304,7 +304,23 @@ export const LixeiraModule: React.FC = () => {
       )
     ) {
       clearTrashBin();
-      // Also purge archived items
+      // Also purge archived items from state & Firestore
+      allRows.forEach((row) => {
+        if (!row.isTrashBin) {
+          const colMap: Record<string, string> = {
+            receitas: 'incomes',
+            contas_fixas: 'fixedExpenses',
+            contas_variaveis: 'variableExpenses',
+            bancos: 'banks',
+            cartoes: 'cards',
+            emprestimos: 'loans',
+            investimentos: 'investments',
+          };
+          const col = colMap[row.moduleKey];
+          if (col) deleteDocFromFirestore(col, row.id);
+        }
+      });
+
       useFinancialStore.setState((s) => ({
         incomes: s.incomes.filter((x) => !x.archived),
         fixedExpenses: s.fixedExpenses.filter((x) => !x.archived),

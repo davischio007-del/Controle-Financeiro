@@ -101,6 +101,7 @@ export async function initFirebaseSync() {
   await seedIfEmpty('loans', store.loans);
   await seedIfEmpty('investments', store.investments);
   await seedIfEmpty('goals', store.goals);
+  await seedIfEmpty('trashBin', store.trashBin);
 
   // 2. Real-time Subscriptions (Syncs automatically across all devices & browsers)
   const unsubscribes: (() => void)[] = [];
@@ -118,9 +119,8 @@ export async function initFirebaseSync() {
         snapshot.forEach((docSnap) => {
           items.push({ ...docSnap.data(), id: docSnap.id });
         });
-        if (items.length > 0 || !snapshot.empty) {
-          useFinancialStore.setState({ [stateKey]: items } as any);
-        }
+        useFinancialStore.setState({ [stateKey]: items } as any);
+        useFinancialStore.getState().recalculateBankBalances();
       },
       (error) => {
         console.warn(`Realtime sync warning on ${colName}:`, error);
@@ -140,6 +140,7 @@ export async function initFirebaseSync() {
   bindCollection('loans', 'loans');
   bindCollection('investments', 'investments');
   bindCollection('goals', 'goals');
+  bindCollection('trashBin', 'trashBin');
   bindCollection('auditLogs', 'auditLogs');
 
   return () => {

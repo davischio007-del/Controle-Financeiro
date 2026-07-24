@@ -49,22 +49,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule 
       color: 'text-amber-500',
     },
     { id: 'contas_variaveis', label: 'Contas Variáveis', icon: Receipt, color: 'text-rose-500' },
-    { id: 'bancos', label: 'Bancos & Contas', icon: Landmark, color: 'text-blue-500' },
     { id: 'cartoes', label: 'Cartões & Faturas', icon: CreditCard, color: 'text-purple-500' },
+    { id: 'bancos', label: 'Bancos & Contas', icon: Landmark, color: 'text-blue-500' },
     { id: 'emprestimos', label: 'Empréstimos', icon: Banknote, color: 'text-red-500' },
     { id: 'investimentos', label: 'Investimentos', icon: PieChart, color: 'text-indigo-500' },
     { id: 'metas', label: 'Metas Financeiras', icon: Target, color: 'text-teal-500' },
     { id: 'transferencias', label: 'Transferências', icon: ArrowRightLeft, color: 'text-cyan-500' },
-    { id: 'categorias', label: 'Categorias', icon: FolderTree },
-    { id: 'subcategorias', label: 'Subcategorias', icon: Tag },
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
   ];
 
-  const adminNavItems = [
+  const adminNavItems: { id: string; label: string; icon: any; adminOnly?: boolean; badge?: number }[] = [
     { id: 'usuarios', label: 'Usuários', icon: Users, adminOnly: true },
     { id: 'configuracoes', label: 'Configurações', icon: Settings },
     { id: 'backup', label: 'Backup & Nuvem', icon: Database },
-    { id: 'lixeira', label: 'Lixeira', icon: Trash2, badge: trashBin.length > 0 ? trashBin.length : undefined },
     { id: 'auditoria', label: 'Auditoria & Logs', icon: FileCheck2 },
   ];
 

@@ -125,7 +125,7 @@ export interface Income {
   description: string;
   categoryId: string;
   subcategoryId?: string;
-  bankId: string;
+  bankId?: string;
   amount: number;
   date: string;
   isRecurring: boolean;
@@ -170,6 +170,10 @@ export interface VariableExpense {
   status: ExpenseStatus;
   receiptName?: string;
   archived: boolean;
+  installmentsCount?: number;
+  currentInstallment?: number;
+  installmentAmount?: number;
+  notes?: string;
 }
 
 export type LoanType = 'CDC' | 'Consignado' | 'Financiamento' | 'Crédito Pessoal' | 'Capital de Giro' | 'Outros';
@@ -190,6 +194,8 @@ export interface LoanInstallment {
   remainingBalance: number; // Saldo Devedor
   status: InstallmentStatus;
   paidDate?: string;
+  paymentBankId?: string;
+  paymentCardId?: string;
 }
 
 export interface ConsignadoDetails {
@@ -202,6 +208,8 @@ export interface Loan {
   id: string;
   bankId: string;
   contractNumber?: string;
+  contractDate?: string; // Data do empréstimo / contratação (YYYY-MM-DD)
+  firstDueDate?: string; // Data do vencimento da 1ª parcela (YYYY-MM-DD)
   type: LoanType | string;
   customType?: string;
   contractedAmount: number; // Valor contratado
@@ -256,10 +264,14 @@ export interface Investment {
   id: string;
   institution: string;
   type: InvestmentType;
+  indexer?: 'CDI' | 'Selic' | 'IPCA' | 'Prefixado' | 'Outros';
+  interestRate?: number; // e.g. 100 (% do CDI) or 12.5 (% a.a.)
   appliedAmount: number;
   currentAmount: number;
-  yieldPercent: number; // monthly or annual yield
-  yieldAccumulated: number;
+  yieldPercent: number; // rentabilidade atual (%)
+  yieldAccumulated: number; // rendimento acumulado (R$)
+  yieldMonthly?: number; // rendimento mensal (R$)
+  yieldYearly?: number; // rendimento anual (R$)
   liquidity: LiquidityType;
   applicationDate: string;
   maturityDate?: string;
