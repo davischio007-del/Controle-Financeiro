@@ -67,21 +67,64 @@ export const ADMIN_PERMISSIONS: UserPermissions = {
 };
 
 export const USER_PERMISSIONS: UserPermissions = {
-  dashboard: { ...FULL_MODULE_PERMISSIONS, manage: false },
+  dashboard: FULL_MODULE_PERMISSIONS,
   receitas: FULL_MODULE_PERMISSIONS,
   contas_fixas: FULL_MODULE_PERMISSIONS,
   contas_variaveis: FULL_MODULE_PERMISSIONS,
-  bancos: { ...FULL_MODULE_PERMISSIONS, create: false, edit: false, delete: false, manage: false },
-  cartoes: { ...FULL_MODULE_PERMISSIONS, create: false, edit: false, delete: false, manage: false },
-  emprestimos: { ...FULL_MODULE_PERMISSIONS, create: false, edit: false, delete: false, manage: false },
-  investimentos: { ...FULL_MODULE_PERMISSIONS, create: false, edit: false, delete: false, manage: false },
+  bancos: FULL_MODULE_PERMISSIONS,
+  cartoes: FULL_MODULE_PERMISSIONS,
+  emprestimos: FULL_MODULE_PERMISSIONS,
+  investimentos: FULL_MODULE_PERMISSIONS,
   metas: FULL_MODULE_PERMISSIONS,
-  categorias: { ...FULL_MODULE_PERMISSIONS, create: false, edit: false, delete: false },
-  subcategorias: { ...FULL_MODULE_PERMISSIONS, create: false, edit: false, delete: false },
-  relatorios: { ...FULL_MODULE_PERMISSIONS, manage: false },
-  usuarios: { view: false, create: false, edit: false, delete: false, import: false, export: false, manage: false },
-  configuracoes: { view: false, create: false, edit: false, delete: false, import: false, export: false, manage: false },
+  categorias: FULL_MODULE_PERMISSIONS,
+  subcategorias: FULL_MODULE_PERMISSIONS,
+  relatorios: FULL_MODULE_PERMISSIONS,
+  usuarios: { view: true, create: false, edit: false, delete: false, import: false, export: false, manage: false },
+  configuracoes: { view: true, create: false, edit: false, delete: false, import: false, export: false, manage: false },
 };
+
+export function filterByUserScope<T extends Record<string, any>>(
+  items: T[],
+  currentUser: User | null,
+  moduleKey?: string
+): T[] {
+  if (!items || !Array.isArray(items)) return [];
+  if (!currentUser) return items;
+
+  // Administrador visualiza todas as informações do sistema
+  if (currentUser.role === 'Administrador') {
+    return items;
+  }
+
+  // Usuário comum visualizando lista de usuários:
+  // Vê estritamente o seu próprio cadastro e informações pessoais
+  if (moduleKey === 'users') {
+    return items.filter((u) => u.id === currentUser.id);
+  }
+
+  // Categorias e subcategorias são padrão do sistema
+  if (moduleKey === 'categorias' || moduleKey === 'subcategorias' || moduleKey === 'categories' || moduleKey === 'subcategories') {
+    return items;
+  }
+
+  // Módulos financeiros e de dados pessoais: filtrados rigorosamente por userId/createdBy/userName
+  return items.filter((item) => {
+    if (item.userId) {
+      return item.userId === currentUser.id;
+    }
+    if (item.createdBy) {
+      return item.createdBy === currentUser.username;
+    }
+    if (item.userName) {
+      return item.userName === currentUser.username;
+    }
+    if (item.deletedBy) {
+      return item.deletedBy === currentUser.username;
+    }
+    // Registros antigos sem dono pertencem ao usuário administrador inicial
+    return currentUser.id === 'user_admin_01';
+  });
+}
 
 // Seed Users
 const INITIAL_ADMIN_PASSWORD_HASH = hashPassword('Snoop123@');
@@ -118,6 +161,7 @@ const INITIAL_USERS: User[] = [
 const INITIAL_BANKS: Bank[] = [
   {
     id: 'bank_itau',
+    userId: 'user_admin_01',
     name: 'Itaú Unibanco',
     institution: 'Banco Itaú S.A.',
     agency: '1234',
@@ -133,6 +177,7 @@ const INITIAL_BANKS: Bank[] = [
   },
   {
     id: 'bank_nubank',
+    userId: 'user_admin_01',
     name: 'Nu Pagamentos',
     institution: 'Nu Financeira',
     agency: '0001',
@@ -148,6 +193,7 @@ const INITIAL_BANKS: Bank[] = [
   },
   {
     id: 'bank_btg',
+    userId: 'user_admin_01',
     name: 'BTG Pactual',
     institution: 'Banco BTG Pactual S.A.',
     agency: '0001',
@@ -161,12 +207,29 @@ const INITIAL_BANKS: Bank[] = [
     archived: false,
     updatedAt: new Date().toISOString(),
   },
+  {
+    id: 'bank_caixa_comum',
+    userId: 'user_regular_02',
+    name: 'Caixa Econômica Federal',
+    institution: 'Caixa Econômica Federal',
+    agency: '1020',
+    account: '44556-7',
+    type: 'Corrente',
+    initialBalance: 3000,
+    currentBalance: 5200.00,
+    color: '#0066B3',
+    icon: 'Landmark',
+    status: 'Ativo',
+    archived: false,
+    updatedAt: new Date().toISOString(),
+  },
 ];
 
 // Seed Cards
 const INITIAL_CARDS: Card[] = [
   {
     id: 'card_nubank_uv',
+    userId: 'user_admin_01',
     name: 'Nubank Ultravioleta',
     bankId: 'bank_nubank',
     network: 'Mastercard',
@@ -182,6 +245,7 @@ const INITIAL_CARDS: Card[] = [
   },
   {
     id: 'card_itau_personnalite',
+    userId: 'user_admin_01',
     name: 'Itaú Personnalité Black',
     bankId: 'bank_itau',
     network: 'Visa',
@@ -191,6 +255,22 @@ const INITIAL_CARDS: Card[] = [
     closingDay: 10,
     dueDay: 18,
     color: '#1E293B',
+    icon: 'CreditCard',
+    status: 'Ativo',
+    archived: false,
+  },
+  {
+    id: 'card_caixa_comum',
+    userId: 'user_regular_02',
+    name: 'Caixa Visa Gold',
+    bankId: 'bank_caixa_comum',
+    network: 'Visa',
+    limitTotal: 8000,
+    limitUsed: 1250.00,
+    limitAvailable: 6750.00,
+    closingDay: 10,
+    dueDay: 18,
+    color: '#0066B3',
     icon: 'CreditCard',
     status: 'Ativo',
     archived: false,
@@ -631,6 +711,25 @@ interface FinancialStore {
   login: (username: string, pass: string) => boolean;
   logout: () => void;
 
+  // Raw Unfiltered Collections
+  _allUsers?: User[];
+  _allBanks?: Bank[];
+  _allCards?: Card[];
+  _allCardInvoices?: CardInvoice[];
+  _allCategories?: Category[];
+  _allSubcategories?: Subcategory[];
+  _allIncomes?: Income[];
+  _allFixedExpenses?: FixedExpense[];
+  _allVariableExpenses?: VariableExpense[];
+  _allLoans?: Loan[];
+  _allInvestments?: Investment[];
+  _allGoals?: Goal[];
+  _allTransfers?: Transfer[];
+  _allTrashBin?: TrashItem[];
+  _allAuditLogs?: AuditLog[];
+
+  setCollectionData: (key: string, items: any[]) => void;
+
   // State slices
   users: User[];
   banks: Bank[];
@@ -805,25 +904,86 @@ export const useFinancialStore = create<FinancialStore>()(
         lastBackupDate: new Date().toISOString(),
       },
 
-      setCurrentUser: (user) => set({ currentUser: user }),
+      setCollectionData: (key, items) => {
+        set((state) => {
+          const masterKey = `_all${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+          const newState: any = {
+            [masterKey]: items,
+          };
+          newState[key] = filterByUserScope(items, state.currentUser, key);
+          return newState;
+        });
+        get().recalculateBankBalances();
+      },
+
+      setCurrentUser: (user) => {
+        set((state) => {
+          const curUser = user;
+          const allUsers = state._allUsers || state.users || INITIAL_USERS;
+          const allBanks = state._allBanks || state.banks || INITIAL_BANKS;
+          const allCards = state._allCards || state.cards || INITIAL_CARDS;
+          const allCardInvoices = state._allCardInvoices || state.cardInvoices || [];
+          const allIncomes = state._allIncomes || state.incomes || INITIAL_INCOMES;
+          const allFixedExpenses = state._allFixedExpenses || state.fixedExpenses || INITIAL_FIXED_EXPENSES;
+          const allVariableExpenses = state._allVariableExpenses || state.variableExpenses || INITIAL_VARIABLE_EXPENSES;
+          const allLoans = state._allLoans || state.loans || INITIAL_LOANS;
+          const allInvestments = state._allInvestments || state.investments || INITIAL_INVESTMENTS;
+          const allGoals = state._allGoals || state.goals || INITIAL_GOALS;
+          const allTransfers = state._allTransfers || state.transfers || [];
+          const allTrashBin = state._allTrashBin || state.trashBin || [];
+          const allAuditLogs = state._allAuditLogs || state.auditLogs || INITIAL_AUDIT_LOGS;
+
+          return {
+            currentUser: curUser,
+            _allUsers: allUsers,
+            _allBanks: allBanks,
+            _allCards: allCards,
+            _allCardInvoices: allCardInvoices,
+            _allIncomes: allIncomes,
+            _allFixedExpenses: allFixedExpenses,
+            _allVariableExpenses: allVariableExpenses,
+            _allLoans: allLoans,
+            _allInvestments: allInvestments,
+            _allGoals: allGoals,
+            _allTransfers: allTransfers,
+            _allTrashBin: allTrashBin,
+            _allAuditLogs: allAuditLogs,
+            users: filterByUserScope(allUsers, curUser, 'users'),
+            banks: filterByUserScope(allBanks, curUser, 'banks'),
+            cards: filterByUserScope(allCards, curUser, 'cards'),
+            cardInvoices: filterByUserScope(allCardInvoices, curUser, 'cardInvoices'),
+            incomes: filterByUserScope(allIncomes, curUser, 'incomes'),
+            fixedExpenses: filterByUserScope(allFixedExpenses, curUser, 'fixedExpenses'),
+            variableExpenses: filterByUserScope(allVariableExpenses, curUser, 'variableExpenses'),
+            loans: filterByUserScope(allLoans, curUser, 'loans'),
+            investments: filterByUserScope(allInvestments, curUser, 'investments'),
+            goals: filterByUserScope(allGoals, curUser, 'goals'),
+            transfers: filterByUserScope(allTransfers, curUser, 'transfers'),
+            trashBin: filterByUserScope(allTrashBin, curUser, 'trashBin'),
+            auditLogs: filterByUserScope(allAuditLogs, curUser, 'auditLogs'),
+          };
+        });
+        get().recalculateBankBalances();
+      },
 
       login: (username, pass) => {
-        const user = get().users.find(
+        const allUsers = get()._allUsers || get().users;
+        const user = allUsers.find(
           (u) => u.username.toLowerCase() === username.toLowerCase() && u.status === 'Ativo'
         );
         if (user && verifyPassword(pass, user.passwordHash)) {
           const updatedUser = { ...user, lastLogin: new Date().toISOString() };
-          set((state) => ({
-            currentUser: updatedUser,
-            users: state.users.map((u) => (u.id === user.id ? updatedUser : u)),
-          }));
+          const updatedAllUsers = allUsers.map((u) => (u.id === user.id ? updatedUser : u));
+          set({ _allUsers: updatedAllUsers });
+          saveDocToFirestore('users', updatedUser);
+          get().setCurrentUser(updatedUser);
           get().logAudit('usuarios', 'Login', `Usuário ${username} realizou login com sucesso`);
           return true;
         }
         return false;
       },
 
-      logout: () => set({ currentUser: null }),
+      logout: () => get().setCurrentUser(null),
 
       // Audit Logging Helper
       logAudit: (module, action, details, previousValue, newValue) => {
@@ -890,19 +1050,35 @@ export const useFinancialStore = create<FinancialStore>()(
 
       // Banks
       recalculateBankBalances: () => {
-        const updatedBanks = recalculateAllBankBalances(get());
-        set({ banks: updatedBanks });
+        const state = get();
+        const updatedBanks = recalculateAllBankBalances(state);
+        const curUser = state.currentUser;
+        const allBanks = state._allBanks
+          ? state._allBanks.map((b) => updatedBanks.find((ub) => ub.id === b.id) || b)
+          : updatedBanks;
+
+        set({
+          _allBanks: allBanks,
+          banks: filterByUserScope(allBanks, curUser, 'banks'),
+        });
+
         updatedBanks.forEach((b) => saveDocToFirestore('banks', b));
       },
 
       addBank: (bankData) => {
+        const curUser = get().currentUser;
         const newBank: Bank = {
           ...bankData,
           id: `bank_${Date.now()}`,
+          userId: bankData.userId || curUser?.id || 'user_admin_01',
           archived: false,
           updatedAt: new Date().toISOString(),
         };
-        set((state) => ({ banks: [...state.banks, newBank] }));
+        const allBanks = [...(get()._allBanks || get().banks), newBank];
+        set({
+          _allBanks: allBanks,
+          banks: filterByUserScope(allBanks, curUser, 'banks'),
+        });
         saveDocToFirestore('banks', newBank);
         get().recalculateBankBalances();
         get().logAudit('bancos', 'Inclusão', `Banco ${newBank.name} cadastrado com saldo R$ ${newBank.initialBalance}`);
@@ -954,14 +1130,20 @@ export const useFinancialStore = create<FinancialStore>()(
 
       // Cards
       addCard: (cardData) => {
+        const curUser = get().currentUser;
         const newCard: Card = {
           ...cardData,
           id: `card_${Date.now()}`,
+          userId: cardData.userId || curUser?.id || 'user_admin_01',
           limitUsed: 0,
           limitAvailable: cardData.limitTotal,
           archived: false,
         };
-        set((state) => ({ cards: [...state.cards, newCard] }));
+        const allCards = [...(get()._allCards || get().cards), newCard];
+        set({
+          _allCards: allCards,
+          cards: filterByUserScope(allCards, curUser, 'cards'),
+        });
         saveDocToFirestore('cards', newCard);
         get().logAudit('cartoes', 'Inclusão', `Cartão ${newCard.name} cadastrado com limite de R$ ${newCard.limitTotal}`);
       },
@@ -1158,44 +1340,13 @@ export const useFinancialStore = create<FinancialStore>()(
         const monthStr = String(month).padStart(2, '0');
         const invoiceTag = `[INVOICE_PAYMENT:${cardId}_${year}_${monthStr}]`;
 
-        const matchingInvoices = get().cardInvoices.filter(
+        const allInvoices = get()._allCardInvoices || get().cardInvoices;
+        const matchingInvoices = allInvoices.filter(
           (ci) => ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year)
         );
 
-        if (matchingInvoices.length === 0) {
-          // Check if there are variable expenses to undo even if cardInvoices document wasn't created
-          const orphanExpenses = get().variableExpenses.filter(
-            (ve) =>
-              (ve.notes && ve.notes.includes(invoiceTag)) ||
-              (ve.description.includes(`${monthStr}/${year}`) &&
-                (ve.description.toLowerCase().includes('fatura') ||
-                  ve.description.toLowerCase().includes(card.name.toLowerCase())))
-          );
-
-          if (orphanExpenses.length === 0) {
-            return { success: false, error: 'Nenhum pagamento registrado para esta fatura.' };
-          }
-        }
-
-        const totalPaidAmount = matchingInvoices.reduce((sum, ci) => sum + (ci.amount || 0), 0);
-
-        // Remove matching cardInvoices from Firestore and state
-        for (const ci of matchingInvoices) {
-          deleteDocFromFirestore('cardInvoices', ci.id);
-        }
-
-        // Estorna o limite no cartão (adiciona de volta o limite utilizado)
-        const updatedLimitUsed = Math.min(card.limitTotal, card.limitUsed + totalPaidAmount);
-        const updatedLimitAvailable = Math.max(0, card.limitTotal - updatedLimitUsed);
-        const updatedCard = { ...card, limitUsed: updatedLimitUsed, limitAvailable: updatedLimitAvailable };
-
-        set((state) => ({
-          cards: state.cards.map((c) => (c.id === cardId ? updatedCard : c)),
-        }));
-        saveDocToFirestore('cards', updatedCard);
-
-        // Remove as despesas variáveis geradas para esta fatura no banco (para estornar o saldo no banco)
-        const expensesToRemove = get().variableExpenses.filter(
+        const allExpenses = get()._allVariableExpenses || get().variableExpenses;
+        const expensesToRemove = allExpenses.filter(
           (ve) =>
             (ve.notes && ve.notes.includes(invoiceTag)) ||
             (ve.description.includes(`${monthStr}/${year}`) &&
@@ -1203,16 +1354,45 @@ export const useFinancialStore = create<FinancialStore>()(
                 ve.description.toLowerCase().includes(card.name.toLowerCase())))
         );
 
+        if (matchingInvoices.length === 0 && expensesToRemove.length === 0) {
+          return { success: false, error: 'Nenhum pagamento registrado para esta fatura.' };
+        }
+
+        const totalPaidAmount = matchingInvoices.reduce((sum, ci) => sum + (ci.amount || 0), 0) ||
+          expensesToRemove.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+        // Remove matching cardInvoices from Firestore
+        for (const ci of matchingInvoices) {
+          deleteDocFromFirestore('cardInvoices', ci.id);
+        }
+
+        // Estorna o limite no cartão (recompoe o limite utilizado)
+        const updatedLimitUsed = Math.min(card.limitTotal, card.limitUsed + totalPaidAmount);
+        const updatedLimitAvailable = Math.max(0, card.limitTotal - updatedLimitUsed);
+        const updatedCard = { ...card, limitUsed: updatedLimitUsed, limitAvailable: updatedLimitAvailable };
+        saveDocToFirestore('cards', updatedCard);
+
+        // Remove as despesas variáveis geradas para esta fatura no banco (para estornar o saldo no banco)
         for (const exp of expensesToRemove) {
           deleteDocFromFirestore('variableExpenses', exp.id);
         }
 
-        set((state) => ({
-          variableExpenses: state.variableExpenses.filter((ve) => !expensesToRemove.some((r) => r.id === ve.id)),
-          cardInvoices: state.cardInvoices.filter(
-            (ci) => !(ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year))
-          ),
-        }));
+        const curUser = get().currentUser;
+        const newAllVar = allExpenses.filter((ve) => !expensesToRemove.some((r) => r.id === ve.id));
+        const newAllInvoices = allInvoices.filter(
+          (ci) => !(ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year))
+        );
+        const allCards = get()._allCards || get().cards;
+        const newAllCards = allCards.map((c) => (c.id === cardId ? updatedCard : c));
+
+        set({
+          _allCards: newAllCards,
+          cards: filterByUserScope(newAllCards, curUser, 'cards'),
+          _allVariableExpenses: newAllVar,
+          variableExpenses: filterByUserScope(newAllVar, curUser, 'variableExpenses'),
+          _allCardInvoices: newAllInvoices,
+          cardInvoices: filterByUserScope(newAllInvoices, curUser, 'cardInvoices'),
+        });
 
         // Recalcula saldos das contas bancárias
         get().recalculateBankBalances();
@@ -1233,7 +1413,8 @@ export const useFinancialStore = create<FinancialStore>()(
         const monthStr = String(month).padStart(2, '0');
         const invoiceTag = `[INVOICE_PAYMENT:${cardId}_${year}_${monthStr}]`;
 
-        const bankPayments = get().variableExpenses.filter(
+        const allVar = get()._allVariableExpenses || get().variableExpenses;
+        const bankPayments = allVar.filter(
           (ve) =>
             (ve.notes && ve.notes.includes(invoiceTag)) ||
             (ve.description.includes(`${monthStr}/${year}`) &&
@@ -1241,7 +1422,8 @@ export const useFinancialStore = create<FinancialStore>()(
                 ve.description.toLowerCase().includes(card.name.toLowerCase())))
         );
 
-        const matchingInvoices = get().cardInvoices.filter(
+        const allInvoices = get()._allCardInvoices || get().cardInvoices;
+        const matchingInvoices = allInvoices.filter(
           (ci) => ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year)
         );
 
@@ -1250,7 +1432,7 @@ export const useFinancialStore = create<FinancialStore>()(
         }
 
         // Calculate current sum of active card purchases for this invoice
-        const allCardExpenses = get().variableExpenses.filter(
+        const allCardExpenses = allVar.filter(
           (ve) => ve.paymentMethod === 'Cartão' && ve.cardId === cardId
         );
 
@@ -1266,6 +1448,8 @@ export const useFinancialStore = create<FinancialStore>()(
           }
         }
 
+        const curUser = get().currentUser;
+
         if (newInvoiceTotal <= 0) {
           // All purchases on this invoice were deleted! Delete bank payment & cardInvoice record.
           for (const bp of bankPayments) {
@@ -1275,12 +1459,17 @@ export const useFinancialStore = create<FinancialStore>()(
             deleteDocFromFirestore('cardInvoices', ci.id);
           }
 
-          set((state) => ({
-            variableExpenses: state.variableExpenses.filter((ve) => !bankPayments.some((bp) => bp.id === ve.id)),
-            cardInvoices: state.cardInvoices.filter(
-              (ci) => !(ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year))
-            ),
-          }));
+          const newAllVar = allVar.filter((ve) => !bankPayments.some((bp) => bp.id === ve.id));
+          const newAllInvoices = allInvoices.filter(
+            (ci) => !(ci.cardId === cardId && Number(ci.month) === Number(month) && Number(ci.year) === Number(year))
+          );
+
+          set({
+            _allVariableExpenses: newAllVar,
+            variableExpenses: filterByUserScope(newAllVar, curUser, 'variableExpenses'),
+            _allCardInvoices: newAllInvoices,
+            cardInvoices: filterByUserScope(newAllInvoices, curUser, 'cardInvoices'),
+          });
 
           get().recalculateBankBalances();
         } else {
@@ -1294,16 +1483,21 @@ export const useFinancialStore = create<FinancialStore>()(
             saveDocToFirestore('cardInvoices', updatedCi);
           }
 
-          set((state) => ({
-            variableExpenses: state.variableExpenses.map((ve) => {
-              const match = bankPayments.find((bp) => bp.id === ve.id);
-              return match ? { ...ve, amount: newInvoiceTotal } : ve;
-            }),
-            cardInvoices: state.cardInvoices.map((ci) => {
-              const match = matchingInvoices.find((m) => m.id === ci.id);
-              return match ? { ...ci, amount: newInvoiceTotal } : ci;
-            }),
-          }));
+          const newAllVar = allVar.map((ve) => {
+            const match = bankPayments.find((bp) => bp.id === ve.id);
+            return match ? { ...ve, amount: newInvoiceTotal } : ve;
+          });
+          const newAllInvoices = allInvoices.map((ci) => {
+            const match = matchingInvoices.find((m) => m.id === ci.id);
+            return match ? { ...ci, amount: newInvoiceTotal } : ci;
+          });
+
+          set({
+            _allVariableExpenses: newAllVar,
+            variableExpenses: filterByUserScope(newAllVar, curUser, 'variableExpenses'),
+            _allCardInvoices: newAllInvoices,
+            cardInvoices: filterByUserScope(newAllInvoices, curUser, 'cardInvoices'),
+          });
 
           get().recalculateBankBalances();
         }
@@ -1385,17 +1579,21 @@ export const useFinancialStore = create<FinancialStore>()(
 
       // Incomes
       addIncome: (incomeData) => {
+        const curUser = get().currentUser;
         const newIncome: Income = {
           ...incomeData,
           id: `inc_${Date.now()}`,
+          userId: incomeData.userId || curUser?.id || 'user_admin_01',
           archived: false,
           createdAt: new Date().toISOString(),
-          createdBy: get().currentUser?.username || 'davischio',
+          createdBy: curUser?.username || 'davischio',
         };
 
-        set((state) => ({
-          incomes: [...state.incomes, newIncome],
-        }));
+        const allIncomes = [...(get()._allIncomes || get().incomes), newIncome];
+        set({
+          _allIncomes: allIncomes,
+          incomes: filterByUserScope(allIncomes, curUser, 'incomes'),
+        });
         saveDocToFirestore('incomes', newIncome);
         get().recalculateBankBalances();
 
@@ -1403,13 +1601,17 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       updateIncome: (id, updates) => {
-        const oldInc = get().incomes.find((i) => i.id === id);
+        const oldInc = (get()._allIncomes || get().incomes).find((i) => i.id === id);
         if (!oldInc) return;
 
         const updatedInc = { ...oldInc, ...updates };
-        set((state) => ({
-          incomes: state.incomes.map((i) => (i.id === id ? updatedInc : i)),
-        }));
+        const curUser = get().currentUser;
+        const allIncomes = (get()._allIncomes || get().incomes).map((i) => (i.id === id ? updatedInc : i));
+
+        set({
+          _allIncomes: allIncomes,
+          incomes: filterByUserScope(allIncomes, curUser, 'incomes'),
+        });
         saveDocToFirestore('incomes', updatedInc);
         get().recalculateBankBalances();
 
@@ -1417,14 +1619,18 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       deleteIncome: (id) => {
-        const inc = get().incomes.find((i) => i.id === id);
+        const inc = (get()._allIncomes || get().incomes).find((i) => i.id === id);
         if (!inc) return;
 
         deleteDocFromFirestore('incomes', id);
 
-        set((state) => ({
-          incomes: state.incomes.filter((i) => i.id !== id),
-        }));
+        const curUser = get().currentUser;
+        const allIncomes = (get()._allIncomes || get().incomes).filter((i) => i.id !== id);
+
+        set({
+          _allIncomes: allIncomes,
+          incomes: filterByUserScope(allIncomes, curUser, 'incomes'),
+        });
         get().recalculateBankBalances();
 
         get().logAudit('receitas', 'Exclusão', `Receita "${inc.description}" excluída definitivamente`);
@@ -1432,9 +1638,11 @@ export const useFinancialStore = create<FinancialStore>()(
 
       // Fixed Expenses
       addFixedExpense: (expData) => {
+        const curUser = get().currentUser;
         const newExp: FixedExpense = {
           ...expData,
           id: `fix_${Date.now()}`,
+          userId: expData.userId || curUser?.id || 'user_admin_01',
           archived: false,
         };
 
@@ -1462,11 +1670,13 @@ export const useFinancialStore = create<FinancialStore>()(
           });
         }
 
-        set((state) => ({
+        const allFixed = [...(get()._allFixedExpenses || get().fixedExpenses), newExp];
+        set({
           cards,
           banks,
-          fixedExpenses: [...state.fixedExpenses, newExp],
-        }));
+          _allFixedExpenses: allFixed,
+          fixedExpenses: filterByUserScope(allFixed, curUser, 'fixedExpenses'),
+        });
         saveDocToFirestore('fixedExpenses', newExp);
         get().recalculateBankBalances();
 
@@ -1474,7 +1684,7 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       updateFixedExpense: (id, updates) => {
-        const oldExp = get().fixedExpenses.find((f) => f.id === id);
+        const oldExp = (get()._allFixedExpenses || get().fixedExpenses).find((f) => f.id === id);
         if (!oldExp) return;
         const updated = { ...oldExp, ...updates };
 
@@ -1503,10 +1713,17 @@ export const useFinancialStore = create<FinancialStore>()(
 
         cards.forEach((c) => saveDocToFirestore('cards', c));
 
-        set((state) => ({
-          cards,
-          fixedExpenses: state.fixedExpenses.map((f) => (f.id === id ? updated : f)),
-        }));
+        const curUser = get().currentUser;
+        const allFixed = (get()._allFixedExpenses || get().fixedExpenses).map((f) => (f.id === id ? updated : f));
+        const allCards = get()._allCards || get().cards;
+        const newAllCards = allCards.map((c) => cards.find((nc) => nc.id === c.id) || c);
+
+        set({
+          _allCards: newAllCards,
+          cards: filterByUserScope(newAllCards, curUser, 'cards'),
+          _allFixedExpenses: allFixed,
+          fixedExpenses: filterByUserScope(allFixed, curUser, 'fixedExpenses'),
+        });
         saveDocToFirestore('fixedExpenses', updated);
         get().recalculateBankBalances();
 
@@ -1514,7 +1731,7 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       deleteFixedExpense: (id) => {
-        const exp = get().fixedExpenses.find((f) => f.id === id);
+        const exp = (get()._allFixedExpenses || get().fixedExpenses).find((f) => f.id === id);
         if (!exp) return;
 
         deleteDocFromFirestore('fixedExpenses', id);
@@ -1533,6 +1750,19 @@ export const useFinancialStore = create<FinancialStore>()(
           });
         }
 
+        const curUser = get().currentUser;
+        const allFixed = (get()._allFixedExpenses || get().fixedExpenses).filter((f) => f.id !== id);
+        const allCards = get()._allCards || get().cards;
+        const newAllCards = allCards.map((c) => cards.find((nc) => nc.id === c.id) || c);
+
+        set({
+          _allCards: newAllCards,
+          cards: filterByUserScope(newAllCards, curUser, 'cards'),
+          _allFixedExpenses: allFixed,
+          fixedExpenses: filterByUserScope(allFixed, curUser, 'fixedExpenses'),
+        });
+        get().recalculateBankBalances();
+
         set((state) => ({
           cards,
           fixedExpenses: state.fixedExpenses.filter((f) => f.id !== id),
@@ -1544,9 +1774,11 @@ export const useFinancialStore = create<FinancialStore>()(
 
       // Variable Expenses
       addVariableExpense: (expData) => {
+        const curUser = get().currentUser;
         const newExp: VariableExpense = {
           ...expData,
           id: `var_${Date.now()}`,
+          userId: expData.userId || curUser?.id || 'user_admin_01',
           archived: false,
         };
 
@@ -1564,10 +1796,12 @@ export const useFinancialStore = create<FinancialStore>()(
           });
         }
 
-        set((state) => ({
+        const allVariable = [...(get()._allVariableExpenses || get().variableExpenses), newExp];
+        set({
           cards,
-          variableExpenses: [...state.variableExpenses, newExp],
-        }));
+          _allVariableExpenses: allVariable,
+          variableExpenses: filterByUserScope(allVariable, curUser, 'variableExpenses'),
+        });
         saveDocToFirestore('variableExpenses', newExp);
         get().recalculateBankBalances();
 
@@ -1586,7 +1820,7 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       updateVariableExpense: (id, updates) => {
-        const exp = get().variableExpenses.find((v) => v.id === id);
+        const exp = (get()._allVariableExpenses || get().variableExpenses).find((v) => v.id === id);
         if (!exp) return;
         const updated = { ...exp, ...updates };
 
@@ -1616,10 +1850,17 @@ export const useFinancialStore = create<FinancialStore>()(
 
         cards.forEach((c) => saveDocToFirestore('cards', c));
 
-        set((state) => ({
-          cards,
-          variableExpenses: state.variableExpenses.map((v) => (v.id === id ? updated : v)),
-        }));
+        const curUser = get().currentUser;
+        const allVar = (get()._allVariableExpenses || get().variableExpenses).map((v) => (v.id === id ? updated : v));
+        const allCards = get()._allCards || get().cards;
+        const newAllCards = allCards.map((c) => cards.find((nc) => nc.id === c.id) || c);
+
+        set({
+          _allCards: newAllCards,
+          cards: filterByUserScope(newAllCards, curUser, 'cards'),
+          _allVariableExpenses: allVar,
+          variableExpenses: filterByUserScope(allVar, curUser, 'variableExpenses'),
+        });
         saveDocToFirestore('variableExpenses', updated);
         get().recalculateBankBalances();
 
@@ -1638,7 +1879,7 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       deleteVariableExpense: (id) => {
-        const exp = get().variableExpenses.find((v) => v.id === id);
+        const exp = (get()._allVariableExpenses || get().variableExpenses).find((v) => v.id === id);
         if (!exp) return;
 
         deleteDocFromFirestore('variableExpenses', id);
@@ -1654,7 +1895,7 @@ export const useFinancialStore = create<FinancialStore>()(
             const month = Number(monthStr);
 
             // Remove matching cardInvoice records so invoice becomes Em Aberto
-            const matchingInvoices = get().cardInvoices.filter(
+            const matchingInvoices = (get()._allCardInvoices || get().cardInvoices).filter(
               (ci) => ci.cardId === cardId && Number(ci.month) === month && Number(ci.year) === year
             );
             for (const ci of matchingInvoices) {
@@ -1663,6 +1904,9 @@ export const useFinancialStore = create<FinancialStore>()(
 
             set((state) => ({
               cardInvoices: state.cardInvoices.filter(
+                (ci) => !(ci.cardId === cardId && Number(ci.month) === month && Number(ci.year) === year)
+              ),
+              _allCardInvoices: (state._allCardInvoices || state.cardInvoices).filter(
                 (ci) => !(ci.cardId === cardId && Number(ci.month) === month && Number(ci.year) === year)
               ),
             }));
@@ -1687,7 +1931,7 @@ export const useFinancialStore = create<FinancialStore>()(
             const year = Number(match[2]);
             const card = cards.find((c) => exp.description.toLowerCase().includes(c.name.toLowerCase()));
             if (card) {
-              const matchingInvoices = get().cardInvoices.filter(
+              const matchingInvoices = (get()._allCardInvoices || get().cardInvoices).filter(
                 (ci) => ci.cardId === card.id && Number(ci.month) === month && Number(ci.year) === year
               );
               for (const ci of matchingInvoices) {
@@ -1695,6 +1939,9 @@ export const useFinancialStore = create<FinancialStore>()(
               }
               set((state) => ({
                 cardInvoices: state.cardInvoices.filter(
+                  (ci) => !(ci.cardId === card.id && Number(ci.month) === month && Number(ci.year) === year)
+                ),
+                _allCardInvoices: (state._allCardInvoices || state.cardInvoices).filter(
                   (ci) => !(ci.cardId === card.id && Number(ci.month) === month && Number(ci.year) === year)
                 ),
               }));
@@ -1721,10 +1968,17 @@ export const useFinancialStore = create<FinancialStore>()(
           });
         }
 
-        set((state) => ({
-          cards,
-          variableExpenses: state.variableExpenses.filter((v) => v.id !== id),
-        }));
+        const curUser = get().currentUser;
+        const allVar = (get()._allVariableExpenses || get().variableExpenses).filter((v) => v.id !== id);
+        const allCards = get()._allCards || get().cards;
+        const newAllCards = allCards.map((c) => cards.find((nc) => nc.id === c.id) || c);
+
+        set({
+          _allCards: newAllCards,
+          cards: filterByUserScope(newAllCards, curUser, 'cards'),
+          _allVariableExpenses: allVar,
+          variableExpenses: filterByUserScope(allVar, curUser, 'variableExpenses'),
+        });
 
         if (exp.paymentMethod === 'Cartão' && exp.cardId) {
           const card = get().cards.find((c) => c.id === exp.cardId);
@@ -1788,9 +2042,11 @@ export const useFinancialStore = create<FinancialStore>()(
 
         const yearlyInterest = Math.round((Math.pow(1 + loanData.interestRateMonthly / 100, 12) - 1) * 10000) / 100;
 
+        const curUser = get().currentUser;
         const newLoan: Loan = {
           ...loanData,
           id,
+          userId: loanData.userId || curUser?.id || 'user_admin_01',
           netAmountReceived: netReceived,
           interestRateYearly: loanData.interestRateYearly || yearlyInterest,
           cetRateYearly: loanData.cetRateYearly || (yearlyInterest + 1.5),
@@ -1808,7 +2064,11 @@ export const useFinancialStore = create<FinancialStore>()(
           archived: false,
         };
 
-        set((state) => ({ loans: [...state.loans, newLoan] }));
+        const allLoans = [...(get()._allLoans || get().loans), newLoan];
+        set({
+          _allLoans: allLoans,
+          loans: filterByUserScope(allLoans, curUser, 'loans'),
+        });
         saveDocToFirestore('loans', newLoan);
         get().recalculateBankBalances();
         get().logAudit('emprestimos', 'Inclusão', `Empréstimo ${newLoan.type} contratado no valor de R$ ${newLoan.contractedAmount} e creditado R$ ${netReceived} no banco.`);
@@ -1884,14 +2144,18 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       deleteLoanSmart: (id) => {
-        const loan = get().loans.find((l) => l.id === id);
+        const loan = (get()._allLoans || get().loans).find((l) => l.id === id);
         if (!loan) return false;
 
         deleteDocFromFirestore('loans', id);
 
-        set((state) => ({
-          loans: state.loans.filter((l) => l.id !== id),
-        }));
+        const curUser = get().currentUser;
+        const allLoans = (get()._allLoans || get().loans).filter((l) => l.id !== id);
+
+        set({
+          _allLoans: allLoans,
+          loans: filterByUserScope(allLoans, curUser, 'loans'),
+        });
         get().recalculateBankBalances();
 
         get().logAudit('emprestimos', 'Exclusão', `Empréstimo ID ${id} excluído definitivamente`);
@@ -2150,24 +2414,31 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       deleteLoan: (id) => {
-        const loan = get().loans.find((l) => l.id === id);
+        const loan = (get()._allLoans || get().loans).find((l) => l.id === id);
         if (!loan) return;
 
         deleteDocFromFirestore('loans', id);
 
-        set((state) => ({
-          loans: state.loans.filter((l) => l.id !== id),
-        }));
+        const curUser = get().currentUser;
+        const allLoans = (get()._allLoans || get().loans).filter((l) => l.id !== id);
+
+        set({
+          _allLoans: allLoans,
+          loans: filterByUserScope(allLoans, curUser, 'loans'),
+        });
+        get().recalculateBankBalances();
 
         get().logAudit('emprestimos', 'Exclusão', `Empréstimo ID ${id} excluído definitivamente`);
       },
 
       // Investments
       addInvestment: (invData) => {
+        const curUser = get().currentUser;
         const id = `inv_${Date.now()}`;
         const newInv: Investment = {
           ...invData,
           id,
+          userId: invData.userId || curUser?.id || 'user_admin_01',
           archived: false,
           transactions: [
             {
@@ -2181,7 +2452,12 @@ export const useFinancialStore = create<FinancialStore>()(
           ],
         };
 
-        set((state) => ({ investments: [...state.investments, newInv] }));
+        const allInv = [...(get()._allInvestments || get().investments), newInv];
+        set({
+          _allInvestments: allInv,
+          investments: filterByUserScope(allInv, curUser, 'investments'),
+        });
+        saveDocToFirestore('investments', newInv);
         get().logAudit('investimentos', 'Inclusão', `Investimento ${newInv.type} na instituição ${newInv.institution} cadastrado`);
       },
 
@@ -2234,16 +2510,56 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       deleteInvestment: (id) => {
-        const inv = get().investments.find((i) => i.id === id);
-        if (!inv) return;
+        let inv = (get()._allInvestments || get().investments).find((i) => i.id === id);
+        if (inv) {
+          deleteDocFromFirestore('investments', id);
+          const curUser = get().currentUser;
+          const allInv = (get()._allInvestments || get().investments).filter((i) => i.id !== id);
+          set({
+            _allInvestments: allInv,
+            investments: filterByUserScope(allInv, curUser, 'investments'),
+          });
+          get().recalculateBankBalances();
+          get().logAudit('investimentos', 'Exclusão', `Investimento ${inv.type} excluído definitivamente`);
+          return;
+        }
 
-        deleteDocFromFirestore('investments', id);
+        // Check if id is a transaction ID inside an investment
+        const allInvs = get()._allInvestments || get().investments;
+        for (const item of allInvs) {
+          const txIndex = item.transactions.findIndex((t) => t.id === id);
+          if (txIndex !== -1) {
+            const tx = item.transactions[txIndex];
+            const updatedTxs = item.transactions.filter((t) => t.id !== id);
+            let newCurr = item.currentAmount;
+            let newApplied = item.appliedAmount;
+            if (tx.type === 'Aporte') {
+              newCurr = Math.max(0, newCurr - tx.amount);
+              newApplied = Math.max(0, newApplied - tx.amount);
+            } else if (tx.type === 'Resgate') {
+              newCurr += tx.amount;
+            } else if (tx.type === 'Rendimento') {
+              newCurr = Math.max(0, newCurr - tx.amount);
+            }
+            const updatedInv: Investment = {
+              ...item,
+              currentAmount: newCurr,
+              appliedAmount: newApplied,
+              transactions: updatedTxs,
+            };
+            saveDocToFirestore('investments', updatedInv);
 
-        set((state) => ({
-          investments: state.investments.filter((i) => i.id !== id),
-        }));
-
-        get().logAudit('investimentos', 'Exclusão', `Investimento ${inv.type} excluído definitivamente`);
+            const curUser = get().currentUser;
+            const newAllInvs = allInvs.map((i) => (i.id === item.id ? updatedInv : i));
+            set({
+              _allInvestments: newAllInvs,
+              investments: filterByUserScope(newAllInvs, curUser, 'investments'),
+            });
+            get().recalculateBankBalances();
+            get().logAudit('investimentos', 'Exclusão', `Transação de investimento excluída`);
+            return;
+          }
+        }
       },
 
       recalculateInvestmentYields: (marketRates) => {
@@ -2307,12 +2623,19 @@ export const useFinancialStore = create<FinancialStore>()(
 
       // Goals
       addGoal: (goalData) => {
+        const curUser = get().currentUser;
         const newGoal: Goal = {
           ...goalData,
           id: `goal_${Date.now()}`,
+          userId: goalData.userId || curUser?.id || 'user_admin_01',
           archived: false,
         };
-        set((state) => ({ goals: [...state.goals, newGoal] }));
+        const allGoals = [...(get()._allGoals || get().goals), newGoal];
+        set({
+          _allGoals: allGoals,
+          goals: filterByUserScope(allGoals, curUser, 'goals'),
+        });
+        saveDocToFirestore('goals', newGoal);
         get().logAudit('metas', 'Inclusão', `Meta "${newGoal.name}" criada com objetivo de R$ ${newGoal.targetAmount}`);
       },
 
@@ -2339,11 +2662,17 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       deleteGoal: (id) => {
-        const goal = get().goals.find((g) => g.id === id);
+        const goal = (get()._allGoals || get().goals).find((g) => g.id === id);
         if (!goal) return;
 
+        deleteDocFromFirestore('goals', id);
+
+        const curUser = get().currentUser;
+        const allGoals = (get()._allGoals || get().goals).filter((g) => g.id !== id);
+
         set((state) => ({
-          goals: state.goals.filter((g) => g.id !== id),
+          _allGoals: allGoals,
+          goals: filterByUserScope(allGoals, curUser, 'goals'),
           trashBin: [
             {
               id: `trash_${Date.now()}`,
@@ -2363,6 +2692,7 @@ export const useFinancialStore = create<FinancialStore>()(
 
       // Transfers
       addTransfer: (transferData) => {
+        const curUser = get().currentUser;
         const originBank = get().banks.find((b) => b.id === transferData.originBankId);
         const destBank = get().banks.find((b) => b.id === transferData.destinationBankId);
         if (!originBank || !destBank) return;
@@ -2370,12 +2700,15 @@ export const useFinancialStore = create<FinancialStore>()(
         const newTransfer: Transfer = {
           ...transferData,
           id: `trf_${Date.now()}`,
+          userId: transferData.userId || curUser?.id || 'user_admin_01',
           archived: false,
         };
 
-        set((state) => ({
-          transfers: [...state.transfers, newTransfer],
-        }));
+        const allTransfers = [...(get()._allTransfers || get().transfers), newTransfer];
+        set({
+          _allTransfers: allTransfers,
+          transfers: filterByUserScope(allTransfers, curUser, 'transfers'),
+        });
         saveDocToFirestore('transfers', newTransfer);
         get().recalculateBankBalances();
 
@@ -2387,26 +2720,34 @@ export const useFinancialStore = create<FinancialStore>()(
       },
 
       deleteTransfer: (id) => {
-        const trf = get().transfers.find((t) => t.id === id);
+        const trf = (get()._allTransfers || get().transfers).find((t) => t.id === id);
         if (!trf) return;
 
         deleteDocFromFirestore('transfers', id);
-        set((state) => ({
-          transfers: state.transfers.filter((t) => t.id !== id),
-        }));
+        const curUser = get().currentUser;
+        const allTransfers = (get()._allTransfers || get().transfers).filter((t) => t.id !== id);
+
+        set({
+          _allTransfers: allTransfers,
+          transfers: filterByUserScope(allTransfers, curUser, 'transfers'),
+        });
         get().recalculateBankBalances();
 
         get().logAudit('transferencias', 'Exclusão', `Transferência de R$ ${trf.amount} excluída com sucesso`);
       },
 
       updateTransfer: (id, updates) => {
-        const trf = get().transfers.find((t) => t.id === id);
+        const trf = (get()._allTransfers || get().transfers).find((t) => t.id === id);
         if (!trf) return;
 
         const updated = { ...trf, ...updates };
-        set((state) => ({
-          transfers: state.transfers.map((t) => (t.id === id ? updated : t)),
-        }));
+        const curUser = get().currentUser;
+        const allTransfers = (get()._allTransfers || get().transfers).map((t) => (t.id === id ? updated : t));
+
+        set({
+          _allTransfers: allTransfers,
+          transfers: filterByUserScope(allTransfers, curUser, 'transfers'),
+        });
         saveDocToFirestore('transfers', updated);
         get().recalculateBankBalances();
 

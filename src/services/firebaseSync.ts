@@ -120,8 +120,7 @@ export async function initFirebaseSync() {
         snapshot.forEach((docSnap) => {
           items.push({ ...docSnap.data(), id: docSnap.id });
         });
-        useFinancialStore.setState({ [stateKey]: items } as any);
-        useFinancialStore.getState().recalculateBankBalances();
+        useFinancialStore.getState().setCollectionData(stateKey as string, items);
       },
       (error) => {
         console.warn(`Realtime sync warning on ${colName}:`, error);

@@ -150,40 +150,52 @@ export const UsuariosModule: React.FC = () => {
       header: 'Ações de Segurança',
       accessor: (r) => (
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => {
-              setTargetPasswordUser(r);
-              setNewPassword('Snoop123@');
-              setIsPasswordModalOpen(true);
-            }}
-            className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 rounded-lg"
-            title="Resetar Senha"
-          >
-            <Key className="w-3.5 h-3.5" />
-          </button>
-          {r.id !== currentUser?.id && (
-            <button
-              onClick={() => toggleBlockUser(r.id)}
-              className={`p-1.5 rounded-lg ${
-                r.status === 'Ativo'
-                  ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                  : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-              }`}
-              title={r.status === 'Ativo' ? 'Bloquear Usuário' : 'Desbloquear Usuário'}
-            >
-              <Ban className="w-3.5 h-3.5" />
-            </button>
+          {currentUser?.role === 'Administrador' ? (
+            <>
+              <button
+                onClick={() => {
+                  setTargetPasswordUser(r);
+                  setNewPassword('Snoop123@');
+                  setIsPasswordModalOpen(true);
+                }}
+                className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 rounded-lg"
+                title="Resetar Senha"
+              >
+                <Key className="w-3.5 h-3.5" />
+              </button>
+              {r.id !== currentUser?.id && (
+                <button
+                  onClick={() => toggleBlockUser(r.id)}
+                  className={`p-1.5 rounded-lg ${
+                    r.status === 'Ativo'
+                      ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                      : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                  }`}
+                  title={r.status === 'Ativo' ? 'Bloquear Usuário' : 'Desbloquear Usuário'}
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </>
+          ) : (
+            <span className="text-[11px] text-slate-400 italic">Sua Conta</span>
           )}
         </div>
       ),
     },
   ];
 
+  const isAdmin = currentUser?.role === 'Administrador';
+
   return (
     <div className="space-y-6">
       <DataTable
-        title="Controle de Usuários & Permissões"
-        subtitle="Gerencie administradores, gerentes, operadores, alteração de senhas e perfis"
+        title={isAdmin ? "Controle de Usuários & Permissões" : "Minhas Informações Pessoais"}
+        subtitle={
+          isAdmin
+            ? "Gerencie administradores, usuários comuns, alteração de senhas e permissões do sistema"
+            : "Visualização e gestão das suas informações pessoais e credenciais de acesso"
+        }
         columns={columns}
         data={users}
         idKey="id"

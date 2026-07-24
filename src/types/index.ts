@@ -46,6 +46,7 @@ export type AccountType = 'Corrente' | 'Poupança' | 'Pagamentos' | 'Investiment
 
 export interface Bank {
   id: string;
+  userId?: string;
   name: string;
   institution: string;
   agency: string;
@@ -64,6 +65,7 @@ export type CardNetwork = 'Visa' | 'Mastercard' | 'Elo' | 'Amex' | 'Outros';
 
 export interface Card {
   id: string;
+  userId?: string;
   name: string;
   bankId: string;
   network: CardNetwork;
@@ -93,6 +95,7 @@ export interface CardPurchase {
 
 export interface CardInvoice {
   id: string;
+  userId?: string;
   cardId: string;
   month: number; // 1-12
   year: number;
@@ -105,6 +108,7 @@ export interface CardInvoice {
 
 export interface Category {
   id: string;
+  userId?: string;
   name: string;
   type: 'Despesa' | 'Receita' | 'Ambos';
   color: string;
@@ -115,6 +119,7 @@ export interface Category {
 
 export interface Subcategory {
   id: string;
+  userId?: string;
   categoryId: string;
   name: string;
   archived: boolean;
@@ -122,6 +127,7 @@ export interface Subcategory {
 
 export interface Income {
   id: string;
+  userId?: string;
   description: string;
   categoryId: string;
   subcategoryId?: string;
@@ -142,6 +148,7 @@ export type ExpenseStatus = 'Pago' | 'Pendente' | 'Atrasado';
 
 export interface FixedExpense {
   id: string;
+  userId?: string;
   description: string;
   categoryId: string;
   subcategoryId?: string;
@@ -159,6 +166,7 @@ export interface FixedExpense {
 
 export interface VariableExpense {
   id: string;
+  userId?: string;
   description: string;
   categoryId: string;
   subcategoryId?: string;
@@ -206,6 +214,7 @@ export interface ConsignadoDetails {
 
 export interface Loan {
   id: string;
+  userId?: string;
   bankId: string;
   contractNumber?: string;
   contractDate?: string; // Data do empréstimo / contratação (YYYY-MM-DD)
@@ -262,6 +271,7 @@ export interface InvestmentTransaction {
 
 export interface Investment {
   id: string;
+  userId?: string;
   institution: string;
   type: InvestmentType;
   indexer?: 'CDI' | 'Selic' | 'IPCA' | 'Prefixado' | 'Outros';
@@ -281,6 +291,7 @@ export interface Investment {
 
 export interface Goal {
   id: string;
+  userId?: string;
   name: string;
   category: 'Reserva Emergência' | 'Casa' | 'Carro' | 'Viagem' | 'Investimentos' | 'Outros';
   targetAmount: number;
@@ -292,6 +303,7 @@ export interface Goal {
 
 export interface Transfer {
   id: string;
+  userId?: string;
   originBankId: string;
   destinationBankId: string;
   amount: number;
@@ -317,6 +329,7 @@ export type SystemModule =
 
 export interface TrashItem {
   id: string;
+  userId?: string;
   originalId: string;
   module: SystemModule;
   itemTitle: string;
